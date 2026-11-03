@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+
+{% block page_title %}Dashboard & Analytics{% endblock %}
+
+{% block content %}
+<!-- Active Journey Banner -->
+<div class="card" style="padding:16px 20px;margin-bottom:20px;display:flex;flex-direction:row;align-items:center;justify-content:space-between;background:linear-gradient(90deg, var(--bg-card), var(--bg-card-hover));">
+    <div style="display:flex;align-items:center;gap:12px;">
+        <span class="badge-status badge-present" style="font-size:13px;"><i class="bi bi-broadcast"></i> Current Journey</span>
+        <h3 id="active-journey-title" style="font-size:15px;font-weight:600;margin:0;">Loading active journey...</h3>
+    </div>
+    <div>
+        <a href="{{ url_for('page_upload') }}" class="btn-primary" style="font-size:13px;padding:6px 14px;">
+            <i class="bi bi-cloud-arrow-up-fill"></i> Upload New Bus Photo
+        </a>
+    </div>
+</div>
+
+<!-- KPI Metrics Grid -->
+<div class="metrics-grid">
+    <div class="metric-card">
+        <div class="metric-icon" style="background:#eff6ff;color:#2563eb;">
+            <i class="bi bi-people-fill"></i>
+        </div>
+        <div>
+            <div class="metric-value" id="kpi-total-passengers">0</div>
+            <div class="metric-label">Total Unique Passengers</div>
+        </div>
+    </div>
+
+    <div class="metric-card">
+        <div class="metric-icon" style="background:#dcfce7;color:#16a34a;">
+            <i class="bi bi-person-check-fill"></i>
+        </div>
+        <div>
+            <div class="metric-value" id="kpi-confirmed-present">0</div>
+            <div class="metric-label">Currently Confirmed Present</div>
+        </div>
+    </div>
+
+    <div class="metric-card">
+        <div class="metric-icon" style="background:#fef9c3;color:#ca8a04;">
+            <i class="bi bi-person-exclamation"></i>
+        </div>
+        <div>
+            <div class="metric-value" id="kpi-possibly-absent">0</div>
+            <div class="metric-label">Possibly Absent / Unconfirmed</div>
+        </div>
+    </div>
+
+    <div class="metric-card">
+        <div class="metric-icon" style="background:#f3e8ff;color:#9333ea;">
+            <i class="bi bi-images"></i>
+        </div>
+        <div>
+            <div class="metric-value" id="kpi-photos-processed">0</div>
+            <div class="metric-label">Bus Photos Processed</div>
+        </div>
+    </div>
+</div>
+
+<!-- Chart & Timeline Grid -->
+<div style="display:grid;grid-template-columns: 2fr 1.2fr;gap:24px;margin-bottom:24px;">
+    <!-- Chart Card -->
+    <div class="card" style="margin-bottom:0;">
+        <div class="card-title">
+            <span><i class="bi bi-graph-up text-primary"></i> Passenger Presence Trend</span>
+            <span style="font-size:12px;font-weight:normal;color:var(--text-muted);">Occupancy over sequential uploads</span>
+        </div>
+        <div style="height:300px;position:relative;">
+            <canvas id="presenceTrendChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Recent Events Timeline Card -->
+    <div class="card" style="margin-bottom:0;display:flex;flex-direction:column;">
+        <div class="card-title">
+            <span><i class="bi bi-bell-fill text-primary"></i> Recent Presence Events</span>
+            <a href="{{ url_for('page_monitoring') }}" style="font-size:12px;color:var(--accent-primary);text-decoration:none;">All Events &rarr;</a>
+        </div>
+        <div id="recent-events-list" style="overflow-y:auto;max-height:300px;padding-right:6px;">
+            <div style="color:var(--text-muted);padding:20px;text-align:center;">Loading events...</div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Uploads Card -->
+<div class="card">
+    <div class="card-title">
+        <span><i class="bi bi-clock-history text-primary"></i> Recent Bus Photo Observations</span>
+        <a href="{{ url_for('page_upload') }}" style="font-size:12px;color:var(--accent-primary);text-decoration:none;">Upload New &rarr;</a>
+    </div>
+    <div class="table-responsive">
+        <table class="custom-table">
+            <thead>
+                <tr>
+                    <th>Upload #</th>
+                    <th>Capture / Upload Time</th>
+                    <th>Passengers Detected</th>
+                    <th>Location / GPS Source</th>
+                    <th>Annotated HUD</th>
+                </tr>
+            </thead>
+            <tbody id="recent-uploads-tbody">
+                <tr><td colspan="5" class="text-center py-4" style="color:var(--text-muted)">Loading uploads...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+{% endblock %}

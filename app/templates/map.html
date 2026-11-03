@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block page_title %}GPS Route & Passenger Map{% endblock %}
+
+{% block content %}
+<div class="card" style="padding:16px 20px;display:flex;align-items:center;justify-content:space-between;flex-direction:row;">
+    <div style="display:flex;align-items:center;gap:16px;">
+        <div>
+            <label class="form-label" style="margin-bottom:0;" for="map-filter-journey">Select Journey Route:</label>
+        </div>
+        <select id="map-filter-journey" class="form-select" style="width:280px;" onchange="loadMapPoints()">
+            <option value="">All Journeys</option>
+        </select>
+    </div>
+    <div style="font-size:12px;color:var(--text-muted);">
+        <i class="bi bi-info-circle"></i> Camera GPS locations and passenger observation waypoints
+    </div>
+</div>
+
+<div class="card" style="padding:12px;position:relative;">
+    <div id="map-container"></div>
+
+    <!-- Empty state notice when no GPS coordinates exist -->
+    <div id="map-empty-state" style="display:none;position:absolute;top:50%;left:50%;transform:translate(-50%, -50%);background:var(--bg-card);padding:24px 32px;border-radius:var(--radius-md);box-shadow:var(--shadow-lg);border:1px solid var(--border-color);text-align:center;z-index:100;">
+        <i class="bi bi-geo-alt-fill text-muted" style="font-size:36px;"></i>
+        <h3 style="font-size:16px;margin:8px 0 4px 0;">No GPS Coordinates Available</h3>
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px;">The uploaded photos for this selection did not include geographic coordinates.</p>
+        <a href="{{ url_for('page_upload') }}" class="btn-primary" style="font-size:13px;">
+            <i class="bi bi-upload"></i> Upload Photo with GPS
+        </a>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/map.js') }}"></script>
+{% endblock %}

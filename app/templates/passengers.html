@@ -1,0 +1,456 @@
+{% extends "base.html" %}
+
+{% block page_title %}Passenger Directory — Date-Wise & Multi-Angle Reports{% endblock %}
+
+{% block content %}
+<!-- Top Header & Primary Actions -->
+<div class="card" style="padding:16px 20px;margin-bottom:16px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+        <div>
+            <h3 style="font-size:17px;font-weight:700;margin-bottom:3px;color:var(--text-main);display:flex;align-items:center;gap:8px;">
+                <i class="bi bi-people-fill text-primary"></i> Passenger Directory & Multi-Angle Attendance
+            </h3>
+            <p style="font-size:12px;color:var(--text-muted);margin:0;">
+                Date-wise attendance reports &bull; Independent Angle A, B, C camera observations &bull; Verified crop gallery &bull; Safe duplicate Person ID merging
+            </p>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn-secondary" onclick="exportReport('csv')" title="Export filtered date-wise report to CSV">
+                <i class="bi bi-file-earmark-text"></i> Export CSV
+            </button>
+            <button class="btn-secondary" onclick="exportReport('xlsx')" title="Export formatted date-wise report to Excel">
+                <i class="bi bi-file-earmark-excel"></i> Export Excel (.xlsx)
+            </button>
+            <button class="btn-secondary" onclick="exportReport('pdf')" title="Export certified PDF report with face photos">
+                <i class="bi bi-file-earmark-pdf text-danger"></i> Export PDF
+            </button>
+            <button class="btn-secondary" onclick="openMergeHistoryModal()" title="View merge logs and reverse incorrect merges">
+                <i class="bi bi-clock-history"></i> Merge History & Undo
+            </button>
+            <a href="{{ url_for('page_upload') }}" class="btn-primary" title="Process new multi-angle photos">
+                <i class="bi bi-camera"></i> Process Photo
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- Top Summary Metrics Grid -->
+<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:14px;margin-bottom:18px;">
+    <div class="card" style="margin-bottom:0;padding:14px 16px;background:var(--bg-app);border-radius:var(--radius-sm);border-left:4px solid #10b981;">
+        <div style="font-size:11px;color:var(--text-muted);font-weight:700;text-transform:uppercase;margin-bottom:3px;">
+            <i class="bi bi-person-check-fill text-success"></i> Unique Passengers
+        </div>
+        <div style="font-size:24px;font-weight:800;color:#10b981;" id="metric-unique-passengers">0</div>
+        <small style="font-size:11px;color:#10b981;font-weight:600;">Canonical resolved identities</small>
+    </div>
+
+    <div class="card" style="margin-bottom:0;padding:14px 16px;background:var(--bg-app);border-radius:var(--radius-sm);border-left:4px solid #2563eb;">
+        <div style="font-size:11px;color:var(--text-muted);font-weight:700;text-transform:uppercase;margin-bottom:3px;">
+            <i class="bi bi-camera text-primary"></i> Angle A Detections
+        </div>
+        <div style="font-size:24px;font-weight:800;color:#2563eb;" id="metric-angle-a-count">0</div>
+        <small style="font-size:11px;color:var(--text-muted);">Front section camera</small>
+    </div>
+
+    <div class="card" style="margin-bottom:0;padding:14px 16px;background:var(--bg-app);border-radius:var(--radius-sm);border-left:4px solid #059669;">
+        <div style="font-size:11px;color:var(--text-muted);font-weight:700;text-transform:uppercase;margin-bottom:3px;">
+            <i class="bi bi-camera text-success"></i> Angle B Detections
+        </div>
+        <div style="font-size:24px;font-weight:800;color:#059669;" id="metric-angle-b-count">0</div>
+        <small style="font-size:11px;color:var(--text-muted);">Middle section camera</small>
+    </div>
+
+    <div class="card" style="margin-bottom:0;padding:14px 16px;background:var(--bg-app);border-radius:var(--radius-sm);border-left:4px solid #7e22ce;">
+        <div style="font-size:11px;color:var(--text-muted);font-weight:700;text-transform:uppercase;margin-bottom:3px;">
+            <i class="bi bi-camera" style="color:#7e22ce;"></i> Angle C Detections
+        </div>
+        <div style="font-size:24px;font-weight:800;color:#7e22ce;" id="metric-angle-c-count">0</div>
+        <small style="font-size:11px;color:var(--text-muted);">Rear section camera</small>
+    </div>
+
+    <div class="card" style="margin-bottom:0;padding:14px 16px;background:var(--bg-app);border-radius:var(--radius-sm);border-left:4px solid #f59e0b;">
+        <div style="font-size:11px;color:var(--text-muted);font-weight:700;text-transform:uppercase;margin-bottom:3px;">
+            <i class="bi bi-link-45deg text-warning"></i> Merged Aliases
+        </div>
+        <div style="font-size:24px;font-weight:800;color:#f59e0b;" id="metric-merged-count">0</div>
+        <small style="font-size:11px;color:var(--text-muted);">Consolidated duplicates</small>
+    </div>
+</div>
+
+<!-- Filters Bar Card -->
+<div class="card" style="padding:16px 20px;margin-bottom:20px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <div style="font-size:13px;font-weight:700;color:var(--text-main);display:flex;align-items:center;gap:6px;">
+            <i class="bi bi-funnel-fill text-primary"></i> Date & Observation Filters
+        </div>
+        <button class="btn-sm btn-secondary" onclick="resetFilters()">
+            <i class="bi bi-arrow-counterclockwise"></i> Reset Filters
+        </button>
+    </div>
+
+    <!-- Filters Row 1 -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:12px;margin-bottom:12px;">
+        <div>
+            <label style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:3px;display:block;">Select Date</label>
+            <select id="filter-date" class="form-select" onchange="loadDateWiseReport()">
+                <option value="">All Dates</option>
+            </select>
+        </div>
+        <div>
+            <label style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:3px;display:block;">From Date</label>
+            <input type="date" id="filter-start-date" class="form-control" onchange="loadDateWiseReport()">
+        </div>
+        <div>
+            <label style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:3px;display:block;">To Date</label>
+            <input type="date" id="filter-end-date" class="form-control" onchange="loadDateWiseReport()">
+        </div>
+        <div>
+            <label style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:3px;display:block;">Select Bus</label>
+            <select id="filter-bus" class="form-select" onchange="loadDateWiseReport()">
+                <option value="">All Buses</option>
+            </select>
+        </div>
+        <div>
+            <label style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:3px;display:block;">Select Journey</label>
+            <select id="filter-journey" class="form-select" onchange="loadDateWiseReport()">
+                <option value="">All Journeys</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- Filters Row 2 -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:12px;">
+        <div>
+            <label style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:3px;display:block;">Camera Angle</label>
+            <select id="filter-angle" class="form-select" onchange="loadDateWiseReport()">
+                <option value="">All Angles (A, B, C)</option>
+                <option value="A">Angle A Only (Front)</option>
+                <option value="B">Angle B Only (Middle)</option>
+                <option value="C">Angle C Only (Rear)</option>
+                <option value="UNKNOWN">Unknown Angle Only</option>
+            </select>
+        </div>
+        <div>
+            <label style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:3px;display:block;">Identity Filter</label>
+            <select id="filter-status" class="form-select" onchange="loadDateWiseReport()">
+                <option value="">All Identities</option>
+                <option value="UNMERGED">Unmerged Only (Masters)</option>
+                <option value="MERGED">Merged Only (Aliases)</option>
+                <option value="NEEDS_REVIEW">Needs Review Only</option>
+            </select>
+        </div>
+        <div>
+            <label style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:3px;display:block;">Search Person ID</label>
+            <input type="text" id="search-person-id" class="form-control" placeholder="Search Person ID (e.g. P001)..." oninput="loadDateWiseReport()">
+        </div>
+        <div>
+            <label style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:3px;display:block;">Search Canonical ID</label>
+            <input type="text" id="search-canonical-id" class="form-control" placeholder="Search Master ID (e.g. P001)..." oninput="loadDateWiseReport()">
+        </div>
+        <div style="display:flex;align-items:flex-end;">
+            <button class="btn-primary" style="width:100%;height:38px;" onclick="loadDateWiseReport()">
+                <i class="bi bi-arrow-clockwise"></i> Refresh Report
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Date-Wise Sections Container -->
+<div id="date-sections-container">
+    <div style="text-align:center;padding:50px;color:var(--text-muted);">
+        <div class="spinner-border text-primary" role="status" style="width:2rem;height:2rem;margin-bottom:12px;"></div>
+        <div>Loading date-wise passenger directory...</div>
+    </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- 1. IMAGE ENLARGEMENT MODAL (Requirement 5)                                 -->
+<!-- ========================================================================= -->
+<div class="modal-overlay" id="image-enlarge-modal" onclick="if(event.target===this) closeImageEnlargeModal()">
+    <div class="modal-box" style="max-width:880px;width:94%;padding:20px;">
+        <div class="modal-header" style="margin-bottom:14px;padding-bottom:10px;">
+            <div style="display:flex;align-items:center;gap:10px;">
+                <h3 class="modal-title" style="margin:0;font-size:17px;font-weight:700;">
+                    Passenger Photo Inspection
+                </h3>
+                <span id="enlarge-modal-counter" style="font-size:12px;background:var(--bg-app);color:var(--text-muted);padding:2px 8px;border-radius:10px;font-weight:600;">1 / 1</span>
+            </div>
+            <button class="modal-close-btn" onclick="closeImageEnlargeModal()" title="Close (ESC)">&times;</button>
+        </div>
+
+        <div class="enlarge-modal-layout">
+            <!-- Left: Large Image Container with Zoom & Prev/Next -->
+            <div class="enlarge-img-box">
+                <button class="enlarge-nav-btn enlarge-nav-prev" onclick="navigateEnlargeModal(-1)" title="Previous photo (&larr;)">
+                    <i class="bi bi-chevron-left"></i>
+                </button>
+                <img id="enlarge-modal-img" class="enlarge-main-img" src="" alt="Passenger Crop">
+                <div id="enlarge-modal-placeholder" style="display:none;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#cbd5e1;"></div>
+                <button class="enlarge-nav-btn enlarge-nav-next" onclick="navigateEnlargeModal(1)" title="Next photo (&rarr;)">
+                    <i class="bi bi-chevron-right"></i>
+                </button>
+
+                <!-- Zoom Controls -->
+                <div class="enlarge-zoom-controls">
+                    <button class="btn-zoom" onclick="zoomEnlargeImage(-0.25)" title="Zoom Out"><i class="bi bi-zoom-out"></i></button>
+                    <button class="btn-zoom" onclick="zoomEnlargeImage(0)" title="Reset Zoom">1:1</button>
+                    <button class="btn-zoom" onclick="zoomEnlargeImage(0.25)" title="Zoom In"><i class="bi bi-zoom-in"></i></button>
+                </div>
+            </div>
+
+            <!-- Right: Inspection Metadata Panel -->
+            <div style="display:flex;flex-direction:column;gap:12px;">
+                <div style="background:var(--bg-card-hover);padding:14px;border-radius:var(--radius-sm);border:1px solid var(--border-color);">
+                    <div style="font-size:11px;text-transform:uppercase;color:var(--text-muted);font-weight:700;">Person ID</div>
+                    <div id="enlarge-modal-pid" style="font-size:22px;font-weight:800;color:var(--text-main);margin:2px 0 6px 0;">P001</div>
+                    <div id="enlarge-modal-canonical"></div>
+                </div>
+
+                <div style="background:var(--bg-card-hover);padding:12px 14px;border-radius:var(--radius-sm);border:1px solid var(--border-color);display:grid;grid-template-columns:1fr;gap:8px;font-size:12px;">
+                    <div>
+                        <span style="color:var(--text-muted);font-weight:600;">Camera Angle:</span>
+                        <strong id="enlarge-modal-angle" style="float:right;">Angle A</strong>
+                    </div>
+                    <div>
+                        <span style="color:var(--text-muted);font-weight:600;">Detection Time:</span>
+                        <span id="enlarge-modal-time" style="float:right;font-weight:600;">-</span>
+                    </div>
+                    <div>
+                        <span style="color:var(--text-muted);font-weight:600;">Bus Number:</span>
+                        <span id="enlarge-modal-bus" style="float:right;font-weight:600;">-</span>
+                    </div>
+                    <div>
+                        <span style="color:var(--text-muted);font-weight:600;">Journey Code:</span>
+                        <span id="enlarge-modal-journey" style="float:right;font-weight:600;">-</span>
+                    </div>
+                    <div>
+                        <span style="color:var(--text-muted);font-weight:600;">Detection Conf:</span>
+                        <strong id="enlarge-modal-det-conf" style="float:right;color:#10b981;">-</strong>
+                    </div>
+                    <div>
+                        <span style="color:var(--text-muted);font-weight:600;">Identity Conf:</span>
+                        <strong id="enlarge-modal-id-conf" style="float:right;color:#3b82f6;">-</strong>
+                    </div>
+                    <div>
+                        <span style="color:var(--text-muted);font-weight:600;">Passenger Status:</span>
+                        <span id="enlarge-modal-status" style="float:right;font-weight:600;">-</span>
+                    </div>
+                </div>
+
+                <div style="font-size:11px;color:var(--text-muted);padding:8px 10px;background:rgba(59,130,246,0.06);border-radius:6px;">
+                    <i class="bi bi-shield-lock-fill text-primary"></i>
+                    Biometric vector protection active. Raw embeddings are strictly safeguarded and never exposed to the client interface.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- 2. MANUAL MERGE CONFIRMATION MODAL (Requirements 6 & 7)                    -->
+<!-- ========================================================================= -->
+<div class="modal-overlay" id="merge-confirm-modal" onclick="if(event.target===this) closeMergeModal()">
+    <div class="modal-box" style="max-width:680px;width:92%;">
+        <div class="modal-header">
+            <div>
+                <h3 class="modal-title" style="margin:0;font-size:18px;font-weight:700;display:flex;align-items:center;gap:8px;">
+                    <i class="bi bi-union text-primary"></i> Merge Selected Person IDs
+                </h3>
+                <small style="font-size:12px;color:var(--text-muted);">
+                    Selected: <strong id="merge-modal-selected-count">2</strong> Passenger Identities
+                </small>
+            </div>
+            <button class="modal-close-btn" onclick="closeMergeModal()">&times;</button>
+        </div>
+
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px;">
+            Compare the detected passenger photos below. All selected IDs will be merged into your chosen Master Person ID.
+            Original camera-angle detections and presence events will be preserved under the Master ID's unified record.
+        </p>
+
+        <!-- Side-by-Side Passenger Photo Comparison -->
+        <div style="font-size:12px;font-weight:700;color:var(--text-main);margin-bottom:6px;">
+            Selected Passenger Crops for Visual Comparison:
+        </div>
+        <div class="merge-comparison-grid" id="merge-comparison-grid"></div>
+
+        <!-- Master Person ID Dropdown -->
+        <div style="margin-bottom:16px;">
+            <label style="font-size:12px;font-weight:700;color:var(--text-main);margin-bottom:4px;display:block;">
+                Select Primary / Master Person ID to Retain:
+            </label>
+            <select id="master-person-select" class="form-select" style="font-weight:600;"></select>
+            <small style="font-size:11px;color:var(--text-muted);display:block;margin-top:4px;">
+                The chosen Master ID will remain the primary canonical record. The other IDs will become historical aliases.
+            </small>
+        </div>
+
+        <!-- Optional Reason Note -->
+        <div style="margin-bottom:20px;">
+            <label style="font-size:12px;font-weight:700;color:var(--text-main);margin-bottom:4px;display:block;">
+                Operator Rationale / Notes (Optional):
+            </label>
+            <input type="text" id="merge-reason-input" class="form-control" placeholder="e.g. Confirmed same passenger captured from Angle A and Angle B">
+        </div>
+
+        <!-- Modal Actions -->
+        <div style="display:flex;justify-content:flex-end;gap:10px;">
+            <button class="btn-secondary" onclick="closeMergeModal()">
+                Cancel
+            </button>
+            <button class="btn-primary" id="btn-confirm-merge" onclick="executeManualMerge()" style="background:#10b981;border-color:#10b981;">
+                <i class="bi bi-check2-circle"></i> Confirm Merge
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- 3. MERGE HISTORY & UNDO MODAL (Requirement 8)                             -->
+<!-- ========================================================================= -->
+<div class="modal-overlay" id="merge-history-modal" onclick="if(event.target===this) closeMergeHistoryModal()">
+    <div class="modal-box" style="max-width:840px;width:94%;">
+        <div class="modal-header">
+            <div>
+                <h3 class="modal-title" style="margin:0;font-size:18px;font-weight:700;display:flex;align-items:center;gap:8px;">
+                    <i class="bi bi-clock-history text-primary"></i> Passenger Identity Merge History & Undo
+                </h3>
+                <small style="font-size:12px;color:var(--text-muted);">
+                    Auditable log of manual consolidations with safe reversal capability
+                </small>
+            </div>
+            <button class="modal-close-btn" onclick="closeMergeHistoryModal()">&times;</button>
+        </div>
+
+        <div class="table-responsive" style="max-height:420px;overflow-y:auto;">
+            <table class="custom-table">
+                <thead>
+                    <tr>
+                        <th>Master ID</th>
+                        <th>Merged Alias ID</th>
+                        <th>Merge Timestamp</th>
+                        <th>Operator</th>
+                        <th>Notes</th>
+                        <th>Status</th>
+                        <th style="text-align:right;">Action</th>
+                    </tr>
+                </thead>
+                <tbody id="merge-history-tbody">
+                    <tr><td colspan="7" class="text-center py-4" style="color:var(--text-muted)">Loading merge history...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block modals %}
+<!-- ========================================================================= -->
+<!-- 4. PASSENGER TIMELINE MODAL (Preserved from original monitoring system)     -->
+<!-- ========================================================================= -->
+<div class="modal-overlay" id="passenger-modal" onclick="if(event.target===this) closePassengerModal()">
+    <div class="modal-box" style="max-width:760px;width:92%;">
+        <div class="modal-header">
+            <div>
+                <h3 class="modal-title" id="modal-passenger-id">Passenger Timeline</h3>
+                <span class="badge-status badge-present" id="modal-status-badge">PRESENT</span>
+            </div>
+            <button class="modal-close-btn" onclick="closePassengerModal()">&times;</button>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;background:var(--bg-card-hover);padding:14px;border-radius:var(--radius-sm);border:1px solid var(--border-color);margin-bottom:20px;">
+            <div>
+                <div style="font-size:11px;text-transform:uppercase;color:var(--text-muted);font-weight:600;">Provisional Boarding:</div>
+                <div id="modal-first-seen" style="font-size:13px;font-weight:600;margin-top:2px;">-</div>
+                <div id="modal-first-gps" style="font-size:12px;color:var(--text-muted);">-</div>
+            </div>
+            <div>
+                <div style="font-size:11px;text-transform:uppercase;color:var(--text-muted);font-weight:600;">Last Confirmed Presence:</div>
+                <div id="modal-last-seen" style="font-size:13px;font-weight:600;margin-top:2px;">-</div>
+                <div id="modal-last-gps" style="font-size:12px;color:var(--text-muted);">-</div>
+            </div>
+        </div>
+
+        <div style="margin-bottom:20px;">
+            <h4 style="font-size:14px;font-weight:600;margin-bottom:10px;">Observation Face Crops:</h4>
+            <div id="modal-observations-list" style="overflow-x:auto;white-space:nowrap;padding:4px 0;"></div>
+        </div>
+
+        <div style="margin-bottom:24px;">
+            <h4 style="font-size:14px;font-weight:600;margin-bottom:10px;">Observation Timeline:</h4>
+            <div class="timeline" id="modal-timeline-list"></div>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- 5. IDENTITY PROVENANCE & MERGE TRANSITION MODAL (Link Form)                -->
+<!-- ========================================================================= -->
+<div class="modal-overlay" id="identity-provenance-modal" onclick="if(event.target===this) closeProvenanceModal()">
+    <div class="modal-box" style="max-width:620px;width:92%;padding:22px;">
+        <div class="modal-header" style="margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border-color);">
+            <div style="display:flex;align-items:center;gap:10px;">
+                <span style="display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;border-radius:10px;background:rgba(59,130,246,0.12);color:#2563eb;font-size:20px;">
+                    <i class="bi bi-diagram-3-fill"></i>
+                </span>
+                <div>
+                    <h3 class="modal-title" style="margin:0;font-size:17px;font-weight:700;">
+                        Identity Provenance & Merge History
+                    </h3>
+                    <small style="font-size:12px;color:var(--text-muted);">
+                        Auditable transition link: Previous Person ID &rarr; Canonical Master ID
+                    </small>
+                </div>
+            </div>
+            <button class="modal-close-btn" onclick="closeProvenanceModal()">&times;</button>
+        </div>
+
+        <div id="provenance-modal-content">
+            <div style="text-align:center;padding:30px;color:var(--text-muted);">
+                <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                <div style="margin-top:8px;font-size:13px;">Retrieving identity provenance...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- 6. ANGLE PASSENGER LIST POPUP MODAL (Rendered at Body Root, 100% On Top)   -->
+<!-- ========================================================================= -->
+<div class="modal-overlay" id="angle-passenger-modal" style="z-index:99999;position:fixed;inset:0;background:rgba(15,23,42,0.75);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:16px;" onclick="if(event.target===this) closeAnglePassengerModal()">
+    <div class="modal-box" style="max-width:1250px;width:94vw;max-height:90vh;margin:auto;display:flex;flex-direction:column;padding:0;overflow:hidden;border:1px solid var(--border-color);border-radius:12px;box-shadow:0 25px 60px rgba(0,0,0,0.4);background:var(--bg-card);position:relative;">
+        <div class="modal-header" style="padding:16px 24px;border-bottom:1px solid var(--border-color);background:var(--bg-card-hover);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
+            <div style="display:flex;align-items:center;gap:14px;">
+                <span id="angle-modal-badge-icon" style="display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:10px;font-size:22px;background:rgba(59,130,246,0.12);color:#2563eb;">
+                    <i class="bi bi-camera-fill"></i>
+                </span>
+                <div>
+                    <h3 class="modal-title" id="angle-modal-title" style="margin:0;font-size:18px;font-weight:700;color:var(--text-main);">
+                        Angle Passenger List
+                    </h3>
+                    <small id="angle-modal-subtitle" style="font-size:12px;color:var(--text-muted);font-weight:500;">
+                        Date &bull; Detections
+                    </small>
+                </div>
+            </div>
+            <button class="modal-close-btn" onclick="closeAnglePassengerModal()" style="font-size:24px;line-height:1;background:none;border:none;color:var(--text-muted);cursor:pointer;" title="Close Modal">&times;</button>
+        </div>
+
+        <div id="angle-modal-body" style="padding:16px 24px;overflow-y:auto;overflow-x:auto;flex:1;background:var(--bg-card);">
+            <!-- Populated dynamically with renderAngleTable() -->
+        </div>
+
+        <div class="modal-footer" style="padding:12px 24px;border-top:1px solid var(--border-color);background:var(--bg-card-hover);display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
+            <div id="angle-modal-footer-stats" style="font-size:12px;color:var(--text-muted);font-weight:600;"></div>
+            <button class="btn-secondary" onclick="closeAnglePassengerModal()" style="padding:6px 16px;">
+                <i class="bi bi-x-circle"></i> Close
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/monitoring.js') }}"></script>
+<script src="{{ url_for('static', filename='js/passengers.js') }}"></script>
+{% endblock %}

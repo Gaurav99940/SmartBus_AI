@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+
+{% block page_title %}Reports & Attendance Export{% endblock %}
+
+{% block content %}
+<div class="privacy-notice-box">
+    <strong><i class="bi bi-shield-lock-fill"></i> Data Integrity & Privacy Compliance Notice:</strong>
+    First-seen and last-seen timestamps are observation-based camera estimates, not guaranteed true boarding or exit times.
+    To protect individual privacy and security, raw biometric facial vectors are strictly excluded from exported reports.
+</div>
+
+<div class="card" style="padding:18px 20px;">
+    <div style="display:grid;grid-template-columns: 1.2fr 1fr 1fr auto;gap:16px;align-items:flex-end;">
+        <div>
+            <label class="form-label" for="report-journey">Journey</label>
+            <select id="report-journey" class="form-select" onchange="filterReport()">
+                <option value="">All Journeys</option>
+            </select>
+        </div>
+
+        <div>
+            <label class="form-label" for="report-status">Presence Status</label>
+            <select id="report-status" class="form-select" onchange="filterReport()">
+                <option value="">All Statuses</option>
+                <option value="PRESENT">Present</option>
+                <option value="POSSIBLY_ABSENT">Possibly Absent</option>
+                <option value="EXIT_UNCONFIRMED">Exit Unconfirmed</option>
+                <option value="EXIT_CONFIRMED">Exit Confirmed</option>
+                <option value="NEEDS_REVIEW">Needs Review</option>
+            </select>
+        </div>
+
+        <div>
+            <label class="form-label" for="report-search">Person ID</label>
+            <input type="text" id="report-search" class="form-control" placeholder="Search (e.g. P001)" oninput="filterReport()">
+        </div>
+
+        <div style="display:flex;gap:10px;">
+            <button class="btn-secondary" onclick="downloadCSVReport()">
+                <i class="bi bi-filetype-csv text-success"></i> Export CSV Report
+            </button>
+            <button class="btn-primary" onclick="downloadPDFReport()" style="background:#dc2626;border-color:#dc2626;">
+                <i class="bi bi-file-earmark-pdf-fill"></i> Export PDF Report (With Faces)
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-title">
+        <span><i class="bi bi-table text-primary"></i> Journey Attendance Summary</span>
+        <span id="report-count-badge" class="badge-status badge-present">0 Records</span>
+    </div>
+
+    <div class="table-responsive">
+        <table class="custom-table">
+            <thead>
+                <tr>
+                    <th>Person ID</th>
+                    <th>Status</th>
+                    <th>Provisional Boarding (First Seen)</th>
+                    <th>First GPS</th>
+                    <th>Last Confirmed Presence</th>
+                    <th>Last GPS</th>
+                    <th>Observations</th>
+                    <th>Exit Confirmed</th>
+                </tr>
+            </thead>
+            <tbody id="report-tbody">
+                <tr><td colspan="8" class="text-center py-4" style="color:var(--text-muted)">Loading report records...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+    loadReportJourneys();
+    filterReport();
+});
+
+async function loadReportJourneys() {
+    try {
+        const res = await fetch("/api/journeys");
+        if (!res.ok) return;
+        const journeys = await res.json();
+        const select = document.getElementById("report-journey");
+        journeys.forEach(j => {
+            const opt = document.createElement("option");
+            opt.value = j.id;
+            opt.textContent = `${j.journey_code} (${j.origin} -> ${j.destination})`;
+            select.appendChild(opt);
+        });
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+async function filterReport() {
+    const journeyId = document.getElementById("report-journey")?.value || "";
+    const status = document.getElementById("report-status")?.value || "";
+    const search = document.getElementById("report-search")?.value || "";
+
+    const url = new URL("/api/passengers", window.location.origin);
+    if (journeyId) url.searchParams.append("journey_id", journeyId);
+    if (status) url.searchParams.append("status", status);
+    if (search) url.searchParams.append("search", search);
+
+    try {
+        const res = await fetch(url);
+        if (!res.ok) return;
+        const data = await res.json();
+        
+        document.getElementById("report-count-badge").textContent = `${data.length} Records`;
+        const tbody = document.getElementById("report-tbody");
+        tbody.innerHTML = "";
+
+        if (data.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="8" class="text-center py-4" style="color:var(--text-muted)">No attendance records found matching filters.</td></tr>`;
+            return;
+        }
+
+        data.forEach(p => {
+            const tr = document.createElement("tr");
+
+            let badgeClass = "badge-present";
+            if (p.status === "POSSIBLY_ABSENT") badgeClass = "badge-possibly-absent";
+            else if (p.status === "EXIT_UNCONFIRMED") badgeClass = "badge-exit-unconfirmed";
+            else if (p.status === "EXIT_CONFIRMED") badgeClass = "badge-exit-confirmed";
+            else if (p.status === "NEEDS_REVIEW") badgeClass = "badge-needs-review";
+
+            const firstGps = (p.first_latitude && p.first_longitude) ? `${p.first_latitude.toFixed(4)}, ${p.first_longitude.toFixed(4)}` : "Missing";
+            const lastGps = (p.last_latitude && p.last_longitude) ? `${p.last_latitude.toFixed(4)}, ${p.last_longitude.toFixed(4)}` : "Missing";
+
+            tr.innerHTML = `
+                <td><strong>${p.person_id}</strong></td>
+                <td><span class="badge-status ${badgeClass}">${p.status.replace('_', ' ')}</span></td>
+                <td>${p.first_seen_time || 'N/A'}</td>
+                <td>${firstGps}</td>
+                <td>${p.last_seen_time || 'N/A'}</td>
+                <td>${lastGps}</td>
+                <td><span class="badge-status badge-present">${p.total_observations} Confirmed</span></td>
+                <td>${p.confirmed_at ? `<span class="badge-status badge-exit-confirmed"><i class="bi bi-check-lg"></i> Confirmed</span>` : `<span style="color:var(--text-muted)">No</span>`}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+function downloadCSVReport() {
+    const journeyId = document.getElementById("report-journey")?.value || "";
+    const status = document.getElementById("report-status")?.value || "";
+    const search = document.getElementById("report-search")?.value || "";
+
+    const url = new URL("/api/reports/export.csv", window.location.origin);
+    if (journeyId) url.searchParams.append("journey_id", journeyId);
+    if (status) url.searchParams.append("status", status);
+    if (search) url.searchParams.append("person_id", search);
+
+    window.location.href = url.toString();
+}
+
+function downloadPDFReport() {
+    const journeyId = document.getElementById("report-journey")?.value || "";
+    const status = document.getElementById("report-status")?.value || "";
+    const search = document.getElementById("report-search")?.value || "";
+
+    const url = new URL("/api/reports/export.pdf", window.location.origin);
+    if (journeyId) url.searchParams.append("journey_id", journeyId);
+    if (status) url.searchParams.append("status", status);
+    if (search) url.searchParams.append("person_id", search);
+
+    window.open(url.toString(), "_blank");
+}
+</script>
+{% endblock %}

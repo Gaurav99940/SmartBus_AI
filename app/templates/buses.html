@@ -1,0 +1,1051 @@
+{% extends "base.html" %}
+
+{% block page_title %}Bus Fleet & Registration{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="card" style="padding:16px 20px;margin-bottom:20px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+        <div>
+            {% if session.get('role') == 'admin' %}
+            <h3 style="font-size:17px;font-weight:700;margin-bottom:4px;color:var(--text-main);">Bus Fleet & Multi-Bus Management</h3>
+            <p style="font-size:13px;color:var(--text-muted);margin:0;">Admin Portal: Monitor all fleet vehicles, track live GPS locations, manage routes, and inspect passenger counts across all buses.</p>
+            {% else %}
+            <h3 style="font-size:17px;font-weight:700;margin-bottom:4px;color:var(--text-main);">My Bus Registration & Route Management</h3>
+            <p style="font-size:13px;color:var(--text-muted);margin:0;">Operator Portal: Manage your registered bus, pick transit stops from the admin master list or add custom stops, and update route details.</p>
+            {% endif %}
+        </div>
+        <div style="display:flex;gap:10px;">
+            <button class="btn-primary" onclick="openRegisterBusModal()">
+                <i class="bi bi-plus-circle"></i> Register Bus
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Fleet KPI Summary -->
+<div class="metrics-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom:20px;">
+    <div class="metric-card">
+        <div class="metric-header">
+            <span class="metric-title">Total Fleet Buses</span>
+            <div class="metric-icon"><i class="bi bi-bus-front"></i></div>
+        </div>
+        <div class="metric-value" id="kpi-total-buses">0</div>
+        <div class="metric-subtext">All registered buses</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-header">
+            <span class="metric-title">Active Buses</span>
+            <div class="metric-icon" style="background:var(--status-present-bg);color:var(--status-present-text);"><i class="bi bi-check-circle"></i></div>
+        </div>
+        <div class="metric-value" id="kpi-active-buses">0</div>
+        <div class="metric-subtext">In operational service</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-header">
+            <span class="metric-title">Maintenance</span>
+            <div class="metric-icon" style="background:var(--status-exit-unconfirmed-bg);color:var(--status-exit-unconfirmed-text);"><i class="bi bi-wrench-adjustable"></i></div>
+        </div>
+        <div class="metric-value" id="kpi-maint-buses">0</div>
+        <div class="metric-subtext">Under service or repair</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-header">
+            <span class="metric-title">Inactive / Idle</span>
+            <div class="metric-icon" style="background:var(--status-exit-confirmed-bg);color:var(--status-exit-confirmed-text);"><i class="bi bi-dash-circle"></i></div>
+        </div>
+        <div class="metric-value" id="kpi-inactive-buses">0</div>
+        <div class="metric-subtext">Parked or off-duty</div>
+    </div>
+</div>
+
+<!-- Filter Toolbar -->
+<div class="card" style="margin-bottom:20px;">
+    <div style="display:grid;grid-template-columns: 2fr 1fr 1fr auto;gap:12px;align-items:center;">
+        <div>
+            <input type="text" id="bus-search" class="form-control" placeholder="Search by Reg Number, Bus Name, Route, or Operator..." oninput="filterBuses()">
+        </div>
+        <div>
+            <select id="bus-status-filter" class="form-select" onchange="filterBuses()">
+                <option value="">All Statuses</option>
+                <option value="Active">Active</option>
+                <option value="Maintenance">Maintenance</option>
+                <option value="Inactive">Inactive</option>
+            </select>
+        </div>
+        <div>
+            <select id="bus-type-filter" class="form-select" onchange="filterBuses()">
+                <option value="">All Vehicle Types</option>
+                <option value="Standard Transit">Standard Transit</option>
+                <option value="Electric Bus">Electric Bus</option>
+                <option value="Double Decker">Double Decker</option>
+                <option value="Articulated">Articulated</option>
+                <option value="Minibus">Minibus</option>
+                <option value="Coach">Coach</option>
+            </select>
+        </div>
+        <div style="display:flex;gap:8px;">
+            <button class="btn-secondary" onclick="loadBuses()"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
+            {% if session.get('role') == 'admin' %}
+            <button class="btn-secondary" style="color:#ef4444;border-color:rgba(239,68,68,0.35);" onclick="clearAllDemoData()" title="Purge any legacy test records from database"><i class="bi bi-trash"></i> Purge Test Records</button>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Buses Table -->
+<div class="card">
+    <div class="table-responsive">
+        <table class="custom-table">
+            <thead>
+                <tr>
+                    <th>Registration / ID</th>
+                    <th>Bus Details</th>
+                    <th>Route</th>
+                    <th>Capacity</th>
+                    <th>Assigned Operator</th>
+                    <th>Bus Status</th>
+                    <th>GPS Telemetry</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="buses-tbody">
+                <tr><td colspan="8" class="text-center py-4" style="color:var(--text-muted);">Loading bus fleet...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Bus Registration Modal -->
+<div class="modal-overlay" id="register-bus-modal" style="display:none;">
+    <div class="modal-box" style="max-width:720px;max-height:90vh;overflow-y:auto;">
+        <div class="modal-header">
+            <div>
+                <h3 class="modal-title" id="bus-modal-title">Register Bus</h3>
+                <p style="font-size:12px;color:var(--text-muted);margin:2px 0 0 0;">Add a new transit vehicle or claim an existing bus in the fleet</p>
+            </div>
+            <button class="modal-close" onclick="closeRegisterBusModal()"><i class="bi bi-x"></i></button>
+        </div>
+        <div class="modal-body" style="padding:20px;">
+            <div id="bus-form-alert" style="display:none;margin-bottom:14px;padding:10px 14px;border-radius:6px;font-size:13px;"></div>
+
+            <form id="bus-reg-form" onsubmit="handleBusSubmit(event)">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
+                    <div>
+                        <label class="form-label" style="font-weight:600;font-size:12px;">Bus Registration Number *</label>
+                        <input type="text" id="reg-num" class="form-control" placeholder="e.g. SF-7829-AI" required>
+                        <small style="font-size:11px;color:var(--text-muted);">Unique state or fleet registration license.</small>
+                    </div>
+                    <div>
+                        <label class="form-label" style="font-weight:600;font-size:12px;">Bus ID / Fleet Number</label>
+                        <input type="text" id="bus-num" class="form-control" placeholder="e.g. BUS-101">
+                        <small style="font-size:11px;color:var(--text-muted);">Internal vehicle identifier code.</small>
+                    </div>
+                </div>
+
+                <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:14px;margin-bottom:14px;">
+                    <div>
+                        <label class="form-label" style="font-weight:600;font-size:12px;">Bus Name / Display Name</label>
+                        <input type="text" id="bus-name" class="form-control" placeholder="e.g. City Express Alpha">
+                    </div>
+                    <div>
+                        <label class="form-label" style="font-weight:600;font-size:12px;">Bus Type</label>
+                        <select id="bus-type" class="form-select">
+                            <option value="Standard Transit">Standard Transit</option>
+                            <option value="Electric Bus">Electric Bus</option>
+                            <option value="Double Decker">Double Decker</option>
+                            <option value="Articulated">Articulated</option>
+                            <option value="Minibus">Minibus</option>
+                            <option value="Coach">Coach</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label" style="font-weight:600;font-size:12px;">Passenger Capacity</label>
+                        <input type="number" id="bus-capacity" class="form-control" min="1" max="250" value="40">
+                    </div>
+                </div>
+
+                <!-- Uttar Pradesh Master Route Selection Dropdown -->
+                <div style="background:linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%);padding:14px 16px;border-radius:8px;border:1px solid #bfdbfe;margin-bottom:16px;">
+                    <label class="form-label" style="font-weight:700;font-size:12px;color:#1e40af;margin-bottom:4px;display:flex;align-items:center;gap:6px;">
+                        <i class="bi bi-map-fill text-primary"></i> Select Uttar Pradesh Master Transit Route (UPSRTC & State Corridors)
+                    </label>
+                    <p style="font-size:11px;color:#3b82f6;margin:0 0 8px 0;">
+                        Choose your operating route across Uttar Pradesh. This will auto-configure your route endpoints, distance, stops, and speed timeline.
+                    </p>
+                    <select id="up-master-routes-select" class="form-select" style="font-weight:600;font-size:13px;background:#ffffff;border:1px solid #93c5fd;" onchange="onSelectUPMasterRoute(this.value)">
+                        <option value="">-- Choose from Master List of Major Uttar Pradesh Routes --</option>
+                    </select>
+                </div>
+
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:14px;">
+                    <div>
+                        <label class="form-label" style="font-weight:600;font-size:12px;">Route Number / Code</label>
+                        <input type="text" id="route-number" class="form-control" placeholder="e.g. Line 42">
+                    </div>
+                    <div>
+                        <label class="form-label" style="font-weight:600;font-size:12px;">Starting Point</label>
+                        <input type="text" id="starting-point" class="form-control" placeholder="e.g. Civic Center Station">
+                    </div>
+                    <div>
+                        <label class="form-label" style="font-weight:600;font-size:12px;">Destination</label>
+                        <input type="text" id="destination" class="form-control" placeholder="e.g. Airport Terminal 2">
+                    </div>
+                </div>
+
+                <div style="margin-bottom:14px;">
+                    <label class="form-label" style="font-weight:600;font-size:12px;">Route Display Name</label>
+                    <input type="text" id="route-name" class="form-control" placeholder="e.g. Civic Center -> Airport Express">
+                </div>
+
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:16px;">
+                    <div>
+                        <label class="form-label" style="font-weight:600;font-size:12px;">Operator Name</label>
+                        <input type="text" id="operator-name" class="form-control" placeholder="e.g. Alex Rivera">
+                    </div>
+                    <div>
+                        <label class="form-label" style="font-weight:600;font-size:12px;">Operator Contact</label>
+                        <input type="text" id="operator-contact" class="form-control" placeholder="e.g. +1 555-0192">
+                    </div>
+                    <div>
+                        <label class="form-label" style="font-weight:600;font-size:12px;">Bus Operational Status</label>
+                        <select id="bus-status" class="form-select">
+                            <option value="Active">Active</option>
+                            <option value="Maintenance">Maintenance</option>
+                            <option value="Inactive">Inactive</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Bus Route Stops Definition (Kha Tak Travel Krti Hai Bus) -->
+                <div class="card" style="margin-bottom:18px;padding:16px;background:var(--bg-app);border:1px solid var(--border-color);">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:10px;">
+                        <div>
+                            <h4 style="font-size:13px;font-weight:700;margin:0;color:var(--text-main);">
+                                <i class="bi bi-signpost-2-fill text-primary"></i> Bus Route Stops & Stations (Choose from Admin Master List or Enter Manually)
+                            </h4>
+                            <p style="font-size:11px;color:var(--text-muted);margin:2px 0 0 0;">
+                                Kha tak travel krti hai bus: Yahan bus ke stops admin master list se choose karein ya custom stops manually type karein.
+                            </p>
+                        </div>
+                        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                            <button type="button" class="btn-secondary" style="font-size:11px;padding:4px 8px;" onclick="load179StopsIntoBusForm()">
+                                <i class="bi bi-lightning-charge-fill text-warning"></i> Load 179-Stops Express
+                            </button>
+                            <button type="button" class="btn-secondary" style="font-size:11px;padding:4px 8px;" onclick="toggleBusDropBox()">
+                                <i class="bi bi-textarea-resize"></i> Toggle Drop Box
+                            </button>
+                            <button type="button" class="btn-secondary" style="font-size:11px;padding:4px 8px;" onclick="loadAllMasterStops()">
+                                <i class="bi bi-magic"></i> Load All Master Stops
+                            </button>
+                            <button type="button" class="btn-secondary" style="font-size:11px;padding:4px 8px;color:#ef4444;" onclick="clearManualStops()">
+                                <i class="bi bi-trash"></i> Clear All
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Admin Master Transit Stops Selection Bar -->
+                    <div style="margin-bottom:12px;padding:10px 14px;background:#ffffff;border:1px solid var(--border-color);border-radius:6px;display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">
+                        <div style="flex:1;min-width:260px;">
+                            <label style="font-size:11px;font-weight:700;color:var(--text-main);margin-bottom:3px;display:block;">
+                                <i class="bi bi-geo-alt-fill text-primary"></i> Choose Stop from Admin Master List:
+                            </label>
+                            <select id="master-stops-dropdown" class="form-select" style="font-size:12px;padding:6px 10px;">
+                                <option value="">-- Choose Stop from Admin Master List (Kaushambi - Sahibabad - Vaishali) --</option>
+                            </select>
+                        </div>
+                        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                            <button type="button" class="btn-primary" style="font-size:12px;padding:6px 12px;font-weight:600;" onclick="addSelectedMasterStop()">
+                                <i class="bi bi-plus-circle-fill"></i> + Add Selected Stop
+                            </button>
+                            <button type="button" class="btn-secondary" style="font-size:12px;padding:6px 12px;" onclick="addCustomManualStopRow()">
+                                <i class="bi bi-pencil-square"></i> + Add Custom Stop (Manual Text)
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Collapsible Bulk Drop Box Textarea -->
+                    <div id="bus-reg-drop-box-container" style="display:none;margin-bottom:12px;background:#f8fafc;border:1px solid #cbd5e1;border-radius:6px;padding:12px;">
+                        <label style="font-size:11px;font-weight:700;color:var(--text-main);margin-bottom:4px;display:block;">
+                            <i class="bi bi-textarea-resize text-primary"></i> Bulk Paste Drop Box (Stops yahan paste karein ya manually likhein):
+                        </label>
+                        <textarea id="bus-reg-drop-box-text" class="form-control" rows="5" style="font-family:monospace;font-size:11px;margin-bottom:8px;" placeholder="Paste stops here (e.g. Stop Name, Location, Time, Speed or one name per line):
+Koshambi Bus Stand, Plot Alpha Sahibabad, 06:01 PM, 3 km/h
+Pacific Mall, Dr Burman Rd, 06:38 PM, 15 km/h
+...
+Bus Depot, Qaiserbagh, Lucknow, 05:40 AM, 13 km/h"></textarea>
+                        <div style="display:flex;justify-content:flex-end;">
+                            <button type="button" class="btn-primary" style="font-size:11px;padding:5px 12px;font-weight:600;" onclick="parseBusDropBoxToList()">
+                                <i class="bi bi-arrow-down-circle-fill"></i> Parse Drop Box into Table Below
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="table-responsive" style="max-height:240px;overflow-y:auto;border:1px solid var(--border-color);border-radius:4px;background:#fff;">
+                        <table class="custom-table" style="font-size:11px;margin:0;">
+                            <thead style="position:sticky;top:0;background:#f8fafc;z-index:2;">
+                                <tr>
+                                    <th style="width:40px;">#</th>
+                                    <th style="width:190px;">Stop Name *</th>
+                                    <th>Location Address</th>
+                                    <th style="width:140px;">Time Window</th>
+                                    <th style="width:80px;">Speed (km/h)</th>
+                                    <th style="width:40px;">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="manual-stops-tbody">
+                                <!-- Dynamic Stops Injected Here -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:11px;color:var(--text-muted);">
+                        <span>Total Selected Stops: <strong id="configured-stops-count" style="color:var(--accent-primary);">0</strong></span>
+                        <span>Sirf wahi stops display honge jo aapne yahan add kiye hain.</span>
+                    </div>
+                </div>
+
+                <div style="background:var(--accent-primary-light);border:1px solid var(--border-color);border-radius:6px;padding:12px;margin-bottom:18px;font-size:12px;color:var(--text-main);">
+                    <i class="bi bi-info-circle" style="color:var(--accent-primary);margin-right:6px;"></i>
+                    <strong>Duplicate Safe:</strong> If a bus with this registration number already exists, saving will link your account to the existing vehicle rather than creating a duplicate entry.
+                </div>
+
+                <div style="display:flex;justify-content:flex-end;gap:10px;">
+                    <button type="button" class="btn-secondary" onclick="closeRegisterBusModal()">Cancel</button>
+                    <button type="submit" id="btn-save-bus" class="btn-primary">
+                        <i class="bi bi-check-lg"></i> Register & Save Bus
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let allBuses = [];
+let currentUserId = null;
+let currentUserRole = "{{ role }}";
+let currentBusId = null;
+
+document.addEventListener("DOMContentLoaded", function() {
+    loadCurrentUser();
+    loadUPMasterRoutes();
+    loadMasterStops();
+    loadBuses();
+
+    // Check query params if setup requested
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get("setup") === "1" || urlParams.get("register") === "1") {
+        openRegisterBusModal();
+    }
+});
+
+async function loadCurrentUser() {
+    try {
+        const res = await fetch("/api/auth/me");
+        if (res.ok) {
+            const data = await res.json();
+            currentUserId = data.id;
+            currentUserRole = data.role;
+            currentBusId = data.current_bus_id;
+        }
+    } catch (e) {
+        console.error("Failed to load user info", e);
+    }
+}
+
+async function loadBuses() {
+    const tbody = document.getElementById("buses-tbody");
+    tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4" style="color:var(--text-muted);"><i class="bi bi-arrow-repeat spin"></i> Loading bus fleet...</td></tr>';
+
+    try {
+        const res = await fetch("/api/buses");
+        if (!res.ok) throw new Error("Failed to load buses");
+        allBuses = await res.json();
+
+        // Update KPIs
+        updateKPIs(allBuses);
+        renderBusesTable(allBuses);
+    } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-danger">Error loading buses: ${err.message}</td></tr>`;
+    }
+}
+
+function updateKPIs(buses) {
+    document.getElementById("kpi-total-buses").textContent = buses.length;
+    document.getElementById("kpi-active-buses").textContent = buses.filter(b => b.bus_status === "Active").length;
+    document.getElementById("kpi-maint-buses").textContent = buses.filter(b => b.bus_status === "Maintenance").length;
+    document.getElementById("kpi-inactive-buses").textContent = buses.filter(b => b.bus_status === "Inactive").length;
+}
+
+function filterBuses() {
+    const query = (document.getElementById("bus-search").value || "").toLowerCase().trim();
+    const statusFilter = document.getElementById("bus-status-filter").value;
+    const typeFilter = document.getElementById("bus-type-filter").value;
+
+    const filtered = allBuses.filter(b => {
+        const matchesQuery = !query || 
+            (b.registration_number && b.registration_number.toLowerCase().includes(query)) ||
+            (b.bus_number && b.bus_number.toLowerCase().includes(query)) ||
+            (b.bus_name && b.bus_name.toLowerCase().includes(query)) ||
+            (b.route_name && b.route_name.toLowerCase().includes(query)) ||
+            (b.operator_name && b.operator_name.toLowerCase().includes(query));
+
+        const matchesStatus = !statusFilter || b.bus_status === statusFilter;
+        const matchesType = !typeFilter || b.bus_type === typeFilter;
+
+        return matchesQuery && matchesStatus && matchesType;
+    });
+
+    renderBusesTable(filtered);
+}
+
+function renderBusesTable(buses) {
+    const tbody = document.getElementById("buses-tbody");
+    if (!buses.length) {
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4" style="color:var(--text-muted);">No buses match your criteria.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = buses.map(b => {
+        const isCurrent = currentBusId === b.id;
+        const statusBadgeClass = b.bus_status === "Active" ? "badge-present" :
+                                (b.bus_status === "Maintenance" ? "badge-exit-unconfirmed" : "badge-exit-confirmed");
+
+        // Freshness badge
+        let gpsBadge = '<span class="badge-status badge-exit-confirmed"><i class="bi bi-circle"></i> Offline</span>';
+        if (b.freshness === "Live") {
+            gpsBadge = '<span class="badge-status badge-present" style="background:#dcfce7;color:#15803d;"><i class="bi bi-broadcast"></i> Live GPS</span>';
+        } else if (b.freshness === "Stale") {
+            gpsBadge = '<span class="badge-status badge-possibly-absent"><i class="bi bi-clock-history"></i> Stale</span>';
+        } else if (b.freshness === "Manual Location") {
+            gpsBadge = '<span class="badge-status badge-exit-unconfirmed"><i class="bi bi-geo-alt"></i> Manual</span>';
+        }
+
+        const isOperator = currentUserRole === "operator";
+
+        return `
+            <tr style="${isCurrent ? 'background:var(--accent-primary-light);' : ''}">
+                <td>
+                    <div style="font-weight:700;font-size:14px;color:var(--text-main);">${escapeHtml(b.registration_number || b.bus_number)}</div>
+                    <div style="font-size:11px;color:var(--text-muted);font-family:monospace;">${escapeHtml(b.bus_number)}</div>
+                    ${isCurrent ? '<span class="badge-status badge-present" style="font-size:10px;margin-top:2px;display:inline-block;">Current Active</span>' : ''}
+                </td>
+                <td>
+                    <div style="font-weight:600;font-size:13px;color:var(--text-main);">${escapeHtml(b.bus_name || 'Transit Vehicle')}</div>
+                    <div style="font-size:12px;color:var(--text-muted);">${escapeHtml(b.bus_type || 'Standard')}</div>
+                </td>
+                <td>
+                    <div style="font-weight:600;font-size:13px;color:var(--text-main);">${escapeHtml(b.route_name || 'Standard Route')}</div>
+                    <div style="font-size:11px;color:var(--text-muted);">
+                        ${b.starting_point ? escapeHtml(b.starting_point) : ''} 
+                        ${b.starting_point && b.destination ? '<i class="bi bi-arrow-right"></i>' : ''} 
+                        ${b.destination ? escapeHtml(b.destination) : ''}
+                    </div>
+                </td>
+                <td>
+                    <div style="font-weight:600;font-size:13px;color:var(--text-main);">${b.capacity} seats</div>
+                    <div style="font-size:11px;color:var(--text-muted);">${b.confirmed_present_count || 0} onboard</div>
+                </td>
+                <td>
+                    <div style="font-weight:600;font-size:13px;color:var(--text-main);">${escapeHtml(b.operator_name || 'Unassigned')}</div>
+                    <div style="font-size:11px;color:var(--text-muted);">${escapeHtml(b.operator_contact || 'No phone')}</div>
+                </td>
+                <td>
+                    <span class="badge-status ${statusBadgeClass}">${escapeHtml(b.bus_status || 'Active')}</span>
+                </td>
+                <td>
+                    ${gpsBadge}
+                    ${b.latest_location_time ? `<div style="font-size:10px;color:var(--text-muted);margin-top:2px;">${b.latest_location_time.slice(11, 16)}</div>` : ''}
+                </td>
+                <td>
+                    <div style="display:flex;gap:6px;align-items:center;">
+                        ${isOperator ? `
+                            <button class="btn-primary" style="font-size:12px;padding:4px 10px;" onclick="editBus(${b.id})" title="Edit Bus Profile & Route Stops">
+                                <i class="bi bi-pencil-square"></i> Edit Bus & Route
+                            </button>
+                        ` : `
+                            <button class="btn-secondary" style="font-size:12px;padding:4px 8px;" onclick="viewBusOnDashboard(${b.id})">
+                                <i class="bi bi-eye"></i> Monitor
+                            </button>
+                            <button class="btn-secondary" style="font-size:12px;padding:4px 8px;" onclick="editBus(${b.id})" title="Edit Bus Profile & Route Stops">
+                                <i class="bi bi-pencil-square"></i> Edit
+                            </button>
+                        `}
+                        <button class="btn-secondary" style="font-size:12px;padding:4px 8px;color:#ef4444;border-color:rgba(239,68,68,0.35);" onclick="deleteBus(${b.id}, '${escapeHtml(b.registration_number || b.bus_number)}')" title="Delete Bus Registration">
+                            <i class="bi bi-trash"></i> Delete
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join("");
+}
+
+function viewBusOnDashboard(busId) {
+    window.location.href = `/dashboard?bus_id=${busId}`;
+}
+
+async function selectBus(busId) {
+    try {
+        const res = await fetch(`/api/buses/${busId}/select`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" }
+        });
+        const data = await res.json();
+        if (res.ok) {
+            currentBusId = busId;
+            showToast(data.message || "Bus selected successfully.");
+            loadBuses();
+        } else {
+            showToast(data.error || "Failed to switch bus.", "error");
+        }
+    } catch (e) {
+        showToast("Error switching bus: " + e.message, "error");
+    }
+}
+
+async function deleteBus(busId, regNum) {
+    if (!confirm(`Are you sure you want to permanently delete registered bus "${regNum}"?\n\nThis will remove the bus, its route stops, and any associated journeys.`)) {
+        return;
+    }
+
+    try {
+        const res = await fetch(`/api/buses/${busId}`, {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" }
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            showToast(data.message || `Bus ${regNum} deleted successfully.`, "success");
+            loadBuses();
+        } else {
+            showToast(data.error || "Failed to delete bus.", "error");
+        }
+    } catch (e) {
+        showToast("Error deleting bus: " + e.message, "error");
+    }
+}
+
+async function clearAllDemoData() {
+    if (!confirm("Are you sure you want to remove all demo data?\n\nThis will delete demo simulation buses (DEMO-EXPRESS-101, BUS-101, BUS-102, TEST-BUS-999), dummy journeys, and fake passengers, leaving only your real registered buses.")) {
+        return;
+    }
+
+    try {
+        const res = await fetch("/api/settings/clear-demo-data", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" }
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            showToast(data.message || "Demo data cleaned successfully!", "success");
+            loadBuses();
+        } else {
+            showToast(data.error || "Failed to clean demo data.", "error");
+        }
+    } catch (e) {
+        showToast("Error clearing demo data: " + e.message, "error");
+    }
+}
+
+// ----------------------------------------------------------------------------
+// Manual Route Stops Builder for Bus Registration
+// ----------------------------------------------------------------------------
+
+const standardRouteStopsPreset = [
+    { name: "Koshambi Bus Stand", address: "Koshambi Bus Stand, Plot Alpha, Sahibabad Industrial Area Site 4, Sahibabad, Ghaziabad", time: "15-10-2026 | 06:01:20 PM - 06:01:30 PM", speed: 3.0, major: true },
+    { name: "Plot No. 1 Dr Burman Rd", address: "Plot No. 1, Dr Burman Rd, Plot Alpha, Sahibabad Industrial Area Site 4", time: "15-10-2026 | 06:37:26 PM - 06:37:48 PM", speed: 3.0, major: false },
+    { name: "Plot Alpha Sahibabad", address: "Plot Alpha, Sahibabad Industrial Area Site 4, Sahibabad, Ghaziabad", time: "15-10-2026 | 06:37:58 PM", speed: 6.0, major: false },
+    { name: "20/2/7 Doctor Burman Road", address: "20/2/7, Doctor Burman Road, Plot Alpha, Sahibabad", time: "15-10-2026 | 06:38:09 PM", speed: 3.0, major: false },
+    { name: "Doctor Burman Road Post", address: "20/2/7, Doctor Burman Road, Plot Alpha, Sahibabad", time: "15-10-2026 | 06:38:19 PM", speed: 5.0, major: false },
+    { name: "Pacific Mall Main Gate", address: "Pacific Mall, Plot Alpha, Sahibabad Industrial Area Site 4", time: "15-10-2026 | 06:38:29 PM", speed: 10.0, major: true },
+    { name: "Pacific Mall Outer", address: "Pacific Mall, Plot No. 1, Dr Burman Rd, Plot Alpha, Sahibabad", time: "15-10-2026 | 06:38:39 PM", speed: 11.0, major: false },
+    { name: "Dr Burman Rd Transit Point", address: "Plot No. 1, Dr Burman Rd, Plot Alpha, Sahibabad", time: "15-10-2026 | 06:38:49 PM", speed: 15.0, major: false },
+    { name: "45 Doctor Burman Road", address: "45, Doctor Burman Road, Kaushambi, Ghaziabad", time: "15-10-2026 | 06:39:07 PM", speed: 11.0, major: false },
+    { name: "J8WC Junction", address: "J8WC+8R, Plot Alpha, Sahibabad Industrial Area Site 4", time: "15-10-2026 | 06:39:13 PM", speed: 8.0, major: false },
+    { name: "Maharajpur Crossing", address: "Maharajpur, Sahibabad Industrial Area Site 4, Sahibabad", time: "15-10-2026 | 06:39:23 PM", speed: 11.0, major: false },
+    { name: "Kaushambi Central", address: "Kaushambi, Ghaziabad, Uttar Pradesh", time: "15-10-2026 | 06:39:33 PM", speed: 15.0, major: true },
+    { name: "Kaushambi Metro (McD)", address: "Kaushambi Metro (McD), Maharajpur, Sahibabad", time: "15-10-2026 | 06:39:53 PM", speed: 15.0, major: true },
+    { name: "Dr Burman Rd Flyover", address: "Dr Burman Rd, Maharajpur, Sahibabad Industrial Area Site 4", time: "15-10-2026 | 06:41:11 PM", speed: 11.0, major: false },
+    { name: "Madan Mohan Malviya Marg", address: "23, Madan Mohan Malviya Marg, Neelpadam Kunj Complex, Vaishali", time: "15-10-2026 | 06:42:34 PM", speed: 5.0, major: false },
+    { name: "Neelpadan Kunj Complex", address: "23, Madan Mohan Malviya Marg, Neelpadan Kunj Complex, Vaishali", time: "15-10-2026 | 06:42:39 PM", speed: 6.0, major: false },
+    { name: "45 Dr Burman Rd Return", address: "45, Dr Burman Rd, Kaushambi, Ghaziabad", time: "15-10-2026 | 06:42:49 PM - 06:42:51 PM", speed: 5.0, major: false },
+    { name: "Maharajpur East", address: "Maharajpur, Sahibabad Industrial Area Site 4", time: "15-10-2026 | 06:42:54 PM", speed: 8.0, major: false },
+    { name: "Dr Burman Rd Point 2", address: "45, Dr Burman Rd, Kaushambi, Ghaziabad", time: "15-10-2026 | 06:42:56 PM", speed: 10.0, major: false },
+    { name: "Dr Burman Rd Sector Link", address: "Dr Burman Rd, Kaushambi, Ghaziabad", time: "15-10-2026 | 06:42:58 PM", speed: 11.0, major: false },
+    { name: "Malviya Marg Vaishali Sector 1", address: "23, Madan Mohan Malviya Marg, Neelpadan Kunj Complex, Vaishali", time: "15-10-2026 | 06:43:01 PM", speed: 10.0, major: false },
+    { name: "Goyal Market Kaushambi", address: "Goyal Market, Doctor Burman Road, Kaushambi, Ghaziabad", time: "15-10-2026 | 06:43:03 PM", speed: 10.0, major: true },
+    { name: "Goyal Market Complex", address: "Goyal Market, Doctor Burman Road, Kaushambi", time: "15-10-2026 | 06:43:06 PM - 06:43:08 PM", speed: 10.0, major: false },
+    { name: "Doctor Burman Road Link", address: "Doctor Burman Road, Kaushambi, Ghaziabad", time: "15-10-2026 | 06:43:10 PM", speed: 10.0, major: false },
+    { name: "Kaushambi Commercial Center", address: "45, Dr Burman Rd, Kaushambi, Ghaziabad", time: "15-10-2026 | 06:43:12 PM", speed: 11.0, major: false },
+    { name: "Pacific Mall South", address: "Pacific Mall, Plot Alpha, Sahibabad Industrial Area Site 4", time: "15-10-2026 | 06:43:14 PM", speed: 8.0, major: false },
+    { name: "Pacific Mall Terminus Hub", address: "Pacific Mall, Sahibabad Industrial Area Site 4, Ghaziabad", time: "15-10-2026 | 06:43:17 PM", speed: 8.0, major: false },
+    { name: "Sahibabad Site 4 Industrial North", address: "Dr Burman Rd, Plot Alpha, Sahibabad Industrial Area Site 4", time: "15-10-2026 | 06:43:21 PM", speed: 8.0, major: false },
+    { name: "Sahibabad Industrial Area Site 4", address: "Sahibabad Industrial Area Site 4, Sahibabad, Ghaziabad", time: "15-10-2026 | 06:43:25 PM", speed: 6.0, major: false },
+    { name: "Plot Alpha Terminal Approach", address: "Plot Alpha, Sahibabad Industrial Area Site 4, Ghaziabad", time: "15-10-2026 | 06:43:30 PM", speed: 5.0, major: false },
+    { name: "Sector-1 Vaishali Terminal", address: "Sector-1, Vaishali Terminal, Ghaziabad, Uttar Pradesh", time: "15-10-2026 | 06:44:00 PM", speed: 3.0, major: true }
+];
+
+let allUPRoutes = [];
+
+async function loadUPMasterRoutes() {
+    try {
+        const res = await fetch("/api/route-stops/up-routes");
+        if (res.ok) {
+            const data = await res.json();
+            allUPRoutes = data.routes || [];
+            populateUPMasterRoutesDropdown();
+        }
+    } catch (e) {
+        console.error("Failed to load UP master routes:", e);
+    }
+}
+
+function populateUPMasterRoutesDropdown() {
+    const sel = document.getElementById("up-master-routes-select");
+    if (!sel) return;
+    sel.innerHTML = `<option value="">-- Choose from Master List of Major Uttar Pradesh Routes (${allUPRoutes.length} Corridors) --</option>`;
+    allUPRoutes.forEach(r => {
+        sel.innerHTML += `<option value="${r.id}">[${escapeHtml(r.route_code)}] ${escapeHtml(r.route_name)} (${r.total_distance_km} km &bull; ${r.stops_count} stops)</option>`;
+    });
+}
+
+function onSelectUPMasterRoute(routeId) {
+    if (!routeId) return;
+    const r = allUPRoutes.find(rt => rt.id == routeId);
+    if (!r) return;
+
+    // Auto-fill route configuration inputs
+    const routeNumInput = document.getElementById("route-number");
+    const startInput = document.getElementById("starting-point");
+    const destInput = document.getElementById("destination");
+    const routeNameInput = document.getElementById("route-name");
+
+    if (routeNumInput) routeNumInput.value = r.route_code;
+    if (startInput) startInput.value = r.origin;
+    if (destInput) destInput.value = r.destination;
+    if (routeNameInput) routeNameInput.value = r.route_name;
+
+    // Load corresponding stops and speed timeline into builder table
+    clearManualStops();
+    if (r.stops && r.stops.length > 0) {
+        r.stops.forEach((s, idx) => {
+            addManualStopRow({
+                name: s.name || s.stop_name || `Stop #${idx + 1}`,
+                address: s.address || s.location_address || s.name,
+                speed: s.speed !== undefined ? s.speed : (s.speed_kmh !== undefined ? s.speed_kmh : 8.0),
+                time: s.time || s.time_window || "",
+                major: s.major !== undefined ? s.major : (s.is_major_stop !== undefined ? s.is_major_stop : (idx === 0 || idx === r.stops.length - 1))
+            });
+        });
+        showToast(`Loaded ${r.stops.length} official stops for route ${r.route_code}!`, "success");
+    }
+}
+
+let masterStopsList = [];
+
+async function loadMasterStops() {
+    try {
+        const res = await fetch("/api/route-stops/master-stops");
+        if (res.ok) {
+            const data = await res.json();
+            masterStopsList = data.stops || [];
+            populateMasterStopsDropdown();
+        }
+    } catch(e) {
+        console.error("Failed to load master stops:", e);
+    }
+}
+
+function populateMasterStopsDropdown() {
+    const sel = document.getElementById("master-stops-dropdown");
+    if (!sel) return;
+    sel.innerHTML = `<option value="">-- Choose Stop from Admin Master List (${masterStopsList.length} Transit Points) --</option>`;
+    masterStopsList.forEach((s, idx) => {
+        const speedText = s.default_speed_kmh ? `${s.default_speed_kmh} km/h` : '8 km/h';
+        sel.innerHTML += `<option value="${s.id}">Stop #${idx + 1}: ${escapeHtml(s.stop_name)} (${speedText})</option>`;
+    });
+}
+
+function addSelectedMasterStop() {
+    const sel = document.getElementById("master-stops-dropdown");
+    if (!sel || !sel.value) {
+        showToast("Please choose a stop from the admin master list dropdown first.", "info");
+        return;
+    }
+    const stopId = parseInt(sel.value, 10);
+    const stop = masterStopsList.find(s => s.id === stopId);
+    if (!stop) return;
+
+    addManualStopRow({
+        name: stop.stop_name,
+        address: stop.location_address,
+        speed: stop.default_speed_kmh || 8.0,
+        time: "",
+        major: stop.is_major_stop
+    });
+    showToast(`Added master stop: ${stop.stop_name}`);
+}
+
+function addCustomManualStopRow() {
+    addManualStopRow({
+        name: "",
+        address: "",
+        speed: 8.0,
+        time: "",
+        major: false
+    });
+}
+
+function loadAllMasterStops() {
+    if (masterStopsList.length === 0) {
+        showToast("Loading master stops...", "info");
+        return;
+    }
+    clearManualStops();
+    masterStopsList.forEach(s => {
+        addManualStopRow({
+            name: s.stop_name,
+            address: s.location_address,
+            speed: s.default_speed_kmh || 8.0,
+            time: "",
+            major: s.is_major_stop
+        });
+    });
+    showToast(`Loaded full corridor (${masterStopsList.length} stops)`);
+}
+
+function addManualStopRow(data = {}) {
+    const tbody = document.getElementById("manual-stops-tbody");
+    if (!tbody) return;
+
+    const rowIdx = tbody.querySelectorAll("tr").length + 1;
+    const tr = document.createElement("tr");
+
+    tr.innerHTML = `
+        <td style="font-weight:700;text-align:center;" class="stop-order-cell">${rowIdx}</td>
+        <td>
+            <input type="text" class="form-control form-control-sm stop-name-input" value="${escapeHtml(data.name || '')}" placeholder="Stop Name (or choose from list)" style="padding:4px 8px;font-size:11px;" required oninput="autoUpdateRouteEndpoints()">
+        </td>
+        <td>
+            <input type="text" class="form-control form-control-sm stop-addr-input" value="${escapeHtml(data.address || '')}" placeholder="Address / Location details" style="padding:4px 8px;font-size:11px;">
+        </td>
+        <td>
+            <input type="text" class="form-control form-control-sm stop-time-input" value="${escapeHtml(data.time || '')}" placeholder="Time / Window (e.g. 06:15 PM)" style="padding:4px 8px;font-size:11px;">
+        </td>
+        <td>
+            <input type="number" class="form-control form-control-sm stop-speed-input" value="${data.speed !== undefined ? data.speed : 8.0}" min="0" max="15" step="0.1" style="padding:4px 6px;font-size:11px;width:70px;">
+        </td>
+        <td style="text-align:center;">
+            <button type="button" class="btn-secondary" style="padding:2px 6px;font-size:11px;color:#ef4444;" onclick="removeManualStopRow(this)" title="Remove Stop">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </td>
+    `;
+    tbody.appendChild(tr);
+    updateStopsCount();
+    autoUpdateRouteEndpoints();
+}
+
+function removeManualStopRow(btn) {
+    const tr = btn.closest("tr");
+    if (tr) {
+        tr.remove();
+        reindexManualStops();
+    }
+}
+
+function clearManualStops() {
+    const tbody = document.getElementById("manual-stops-tbody");
+    if (tbody) tbody.innerHTML = "";
+    updateStopsCount();
+}
+
+function reindexManualStops() {
+    const rows = document.querySelectorAll("#manual-stops-tbody tr");
+    rows.forEach((r, idx) => {
+        const orderCell = r.querySelector(".stop-order-cell");
+        if (orderCell) orderCell.textContent = idx + 1;
+    });
+    updateStopsCount();
+    autoUpdateRouteEndpoints();
+}
+
+function updateStopsCount() {
+    const rows = document.querySelectorAll("#manual-stops-tbody tr");
+    const countEl = document.getElementById("configured-stops-count");
+    if (countEl) countEl.textContent = rows.length;
+}
+
+function toggleBusDropBox() {
+    const box = document.getElementById("bus-reg-drop-box-container");
+    if (box) {
+        box.style.display = box.style.display === "none" ? "block" : "none";
+        if (box.style.display === "block") {
+            document.getElementById("bus-reg-drop-box-text")?.focus();
+        }
+    }
+}
+
+async function load179StopsIntoBusForm() {
+    try {
+        const res = await fetch("/api/route-stops/up-routes");
+        if (!res.ok) throw new Error("Failed to fetch UP routes");
+        const data = await res.json();
+        const route179 = data.routes.find(r => r.route_code === "UP-RT-11" || r.stops_count >= 150) || data.routes[0];
+        if (!route179 || !route179.stops || route179.stops.length === 0) {
+            showToast("179-stops express data not found in library.");
+            return;
+        }
+
+        clearManualStops();
+        document.getElementById("route-name").value = route179.route_name;
+        document.getElementById("route-number").value = route179.route_code;
+        document.getElementById("starting-point").value = route179.origin;
+        document.getElementById("destination").value = route179.destination;
+
+        route179.stops.forEach(s => {
+            addManualStopRow({
+                name: s.name,
+                address: s.address,
+                speed: s.speed,
+                time: s.time,
+                major: s.major
+            });
+        });
+
+        showToast(`Loaded all ${route179.stops.length} stops from ${route179.route_name}!`);
+    } catch(e) {
+        showToast("Error loading 179 stops: " + e.message);
+    }
+}
+
+function parseBusDropBoxToList() {
+    const textarea = document.getElementById("bus-reg-drop-box-text");
+    if (!textarea || !textarea.value.trim()) {
+        showToast("Please enter or paste stops into the drop box first.");
+        return;
+    }
+
+    const rawText = textarea.value.trim();
+    const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+
+    if (lines.length === 0) {
+        showToast("No valid lines detected in drop box.");
+        return;
+    }
+
+    clearManualStops();
+    let count = 0;
+    lines.forEach((line, idx) => {
+        let cleaned = line.replace(/^(stop\s*\d+[\s:.-]*|\d+[\s:.-]+)/i, "").trim();
+        const parts = cleaned.split(",").map(p => p.trim());
+        let name = parts[0] || `Stop #${idx + 1}`;
+        let address = parts[1] || name;
+        let time = parts[2] || "";
+        let speed = 8.0;
+
+        for (let p of parts) {
+            const m = p.match(/(\d+(\.\d+)?)\s*(km\/h|kmh)?/i);
+            if (m && p !== name) speed = parseFloat(m[1]);
+            if (/am|pm/i.test(p) && p !== name) time = p;
+        }
+
+        const isMajor = /stand|terminal|depot|station|metro|crossing|bypass/i.test(name) || idx === 0 || idx === lines.length - 1;
+
+        addManualStopRow({
+            name: name,
+            address: address,
+            time: time,
+            speed: speed,
+            major: isMajor
+        });
+        count++;
+    });
+
+    const box = document.getElementById("bus-reg-drop-box-container");
+    if (box) box.style.display = "none";
+    showToast(`Parsed ${count} stops into table below!`);
+}
+
+
+function autoUpdateRouteEndpoints() {
+    const rows = document.querySelectorAll("#manual-stops-tbody tr");
+    if (rows.length === 0) return;
+
+    const firstRowName = rows[0].querySelector(".stop-name-input") ? rows[0].querySelector(".stop-name-input").value.trim() : "";
+    const lastRowName = rows[rows.length - 1].querySelector(".stop-name-input") ? rows[rows.length - 1].querySelector(".stop-name-input").value.trim() : "";
+
+    const startInput = document.getElementById("starting-point");
+    const destInput = document.getElementById("destination");
+    const routeInput = document.getElementById("route-name");
+
+    if (startInput && firstRowName && !startInput.value) {
+        startInput.value = firstRowName;
+    }
+    if (destInput && lastRowName && (!destInput.value || rows.length === 1)) {
+        destInput.value = lastRowName;
+    }
+    if (routeInput && firstRowName && lastRowName && !routeInput.value) {
+        routeInput.value = `${firstRowName} - ${lastRowName}`;
+    }
+}
+
+function editBus(busId) {
+    const bus = allBuses.find(b => b.id === busId);
+    if (!bus) return;
+    openRegisterBusModal(bus);
+}
+
+async function loadExistingBusStops(busId) {
+    try {
+        const res = await fetch(`/api/route-stops?bus_id=${busId}`);
+        if (res.ok) {
+            const data = await res.json();
+            clearManualStops();
+            if (data.stops && data.stops.length > 0) {
+                data.stops.forEach(s => {
+                    addManualStopRow({
+                        name: s.stop_name,
+                        address: s.location_address,
+                        speed: s.speed_kmh,
+                        time: s.time_window,
+                        major: s.is_major_stop
+                    });
+                });
+            }
+        }
+    } catch(e) {
+        console.error("Failed to load existing bus stops:", e);
+    }
+}
+
+function openRegisterBusModal(busToEdit = null) {
+    document.getElementById("bus-reg-form").reset();
+    document.getElementById("bus-form-alert").style.display = "none";
+    const upSelect = document.getElementById("up-master-routes-select");
+    if (upSelect) upSelect.value = "";
+    clearManualStops();
+
+    if (busToEdit) {
+        document.getElementById("bus-modal-title").textContent = `Edit Bus: ${busToEdit.registration_number || busToEdit.bus_number}`;
+        document.getElementById("reg-num").value = busToEdit.registration_number || "";
+        document.getElementById("bus-num").value = busToEdit.bus_number || "";
+        document.getElementById("bus-name").value = busToEdit.bus_name || "";
+        document.getElementById("bus-type").value = busToEdit.bus_type || "Standard Transit";
+        document.getElementById("bus-capacity").value = busToEdit.capacity || 40;
+        document.getElementById("route-number").value = busToEdit.route_number || "";
+        document.getElementById("starting-point").value = busToEdit.starting_point || "";
+        document.getElementById("destination").value = busToEdit.destination || "";
+        document.getElementById("route-name").value = busToEdit.route_name || "";
+        document.getElementById("operator-name").value = busToEdit.operator_name || "";
+        document.getElementById("operator-contact").value = busToEdit.operator_contact || "";
+        document.getElementById("bus-status").value = busToEdit.bus_status || "Active";
+        loadExistingBusStops(busToEdit.id);
+    } else {
+        document.getElementById("bus-modal-title").textContent = "Register Bus & Route Stops";
+        // Start clean with 0 stops, operator adds chosen UP route or individual stops
+    }
+
+    const modal = document.getElementById("register-bus-modal");
+    if (modal) {
+        modal.classList.add("active");
+        modal.style.display = "flex";
+        modal.style.opacity = "1";
+        modal.style.visibility = "visible";
+        modal.style.pointerEvents = "auto";
+    }
+}
+
+function closeRegisterBusModal() {
+    const modal = document.getElementById("register-bus-modal");
+    if (modal) {
+        modal.classList.remove("active");
+        modal.style.display = "none";
+        modal.style.opacity = "0";
+        modal.style.visibility = "hidden";
+        modal.style.pointerEvents = "none";
+    }
+}
+
+async function handleBusSubmit(e) {
+    e.preventDefault();
+    const btn = document.getElementById("btn-save-bus");
+    const alertBox = document.getElementById("bus-form-alert");
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-arrow-repeat spin"></i> Saving Bus & Route Stops...';
+
+    // Collect manually entered route stops
+    const routeStops = [];
+    const rows = document.querySelectorAll("#manual-stops-tbody tr");
+    rows.forEach((r, idx) => {
+        const name = (r.querySelector(".stop-name-input") ? r.querySelector(".stop-name-input").value.trim() : "");
+        const addr = (r.querySelector(".stop-addr-input") ? r.querySelector(".stop-addr-input").value.trim() : "") || name;
+        const time = (r.querySelector(".stop-time-input") ? r.querySelector(".stop-time-input").value.trim() : "");
+        const speed = parseFloat(r.querySelector(".stop-speed-input") ? r.querySelector(".stop-speed-input").value : "8.0") || 8.0;
+
+        if (name) {
+            routeStops.push({
+                stop_order: idx + 1,
+                stop_name: name,
+                location_address: addr,
+                time_window: time,
+                speed_kmh: speed,
+                is_major_stop: (idx === 0 || idx === rows.length - 1)
+            });
+        }
+    });
+
+    const payload = {
+        registration_number: document.getElementById("reg-num").value.trim(),
+        bus_number: document.getElementById("bus-num").value.trim(),
+        bus_name: document.getElementById("bus-name").value.trim(),
+        bus_type: document.getElementById("bus-type").value,
+        capacity: parseInt(document.getElementById("bus-capacity").value) || 40,
+        route_number: document.getElementById("route-number").value.trim(),
+        starting_point: document.getElementById("starting-point").value.trim(),
+        destination: document.getElementById("destination").value.trim(),
+        route_name: document.getElementById("route-name").value.trim(),
+        operator_name: document.getElementById("operator-name").value.trim(),
+        operator_contact: document.getElementById("operator-contact").value.trim(),
+        bus_status: document.getElementById("bus-status").value,
+        route_stops: routeStops
+    };
+
+    try {
+        const res = await fetch("/api/buses", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (res.ok) {
+            currentBusId = data.bus ? data.bus.id : currentBusId;
+            closeRegisterBusModal();
+            showToast(data.message || `Bus registered with ${routeStops.length} route stops!`);
+            loadBuses();
+        } else {
+            alertBox.style.display = "block";
+            alertBox.style.background = "var(--status-needs-review-bg)";
+            alertBox.style.color = "var(--status-needs-review-text)";
+            alertBox.textContent = data.error || "Failed to register bus.";
+        }
+    } catch (err) {
+        alertBox.style.display = "block";
+        alertBox.style.background = "var(--status-needs-review-bg)";
+        alertBox.style.color = "var(--status-needs-review-text)";
+        alertBox.textContent = "Network error: " + err.message;
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-check-lg"></i> Register & Save Bus';
+    }
+}
+
+function escapeHtml(text) {
+    if (!text) return "";
+    return text.toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+</script>
+{% endblock %}

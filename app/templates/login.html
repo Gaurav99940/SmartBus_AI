@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Smart Bus Passenger Tracking</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .login-page {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background: radial-gradient(circle at 50% 50%, rgba(37, 99, 235, 0.08), transparent 70%), var(--bg-app);
+        }
+        .login-card {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: 36px;
+            width: 100%;
+            max-width: 440px;
+            box-shadow: var(--shadow-lg);
+        }
+    </style>
+</head>
+<body class="login-page">
+    <div class="login-card" style="max-width:480px;">
+        <div style="text-align:center;margin-bottom:20px;">
+            <div class="brand-icon" style="margin:0 auto 10px;width:48px;height:48px;font-size:24px;">
+                <i class="bi bi-bus-front-fill"></i>
+            </div>
+            <h2 style="font-size:20px;font-weight:700;margin:0;">SmartBus AI Tracking</h2>
+            <p style="color:var(--text-muted);font-size:13px;margin-top:4px;">Passenger Attendance & Uttar Pradesh Fleet Transit</p>
+        </div>
+
+        <!-- Tab Switcher: Sign In vs Register Operator -->
+        <div style="display:flex;background:var(--bg-app);padding:4px;border-radius:8px;margin-bottom:20px;border:1px solid var(--border-color);">
+            <button type="button" id="tab-btn-signin" class="btn" style="flex:1;font-size:13px;font-weight:700;padding:8px;border-radius:6px;background:var(--accent-primary);color:#fff;border:none;" onclick="switchAuthTab('signin')">
+                <i class="bi bi-box-arrow-in-right"></i> Sign In
+            </button>
+            <button type="button" id="tab-btn-register" class="btn" style="flex:1;font-size:13px;font-weight:600;padding:8px;border-radius:6px;background:transparent;color:var(--text-muted);border:none;" onclick="switchAuthTab('register')">
+                <i class="bi bi-person-plus-fill"></i> Register Operator
+            </button>
+        </div>
+
+        <!-- 1. SIGN IN FORM -->
+        <form id="login-form" onsubmit="handleLogin(event)">
+            <div class="form-group" style="margin-bottom:14px;">
+                <label class="form-label" for="username" style="font-size:12px;font-weight:600;">Username</label>
+                <input type="text" id="username" class="form-control" placeholder="e.g. operator or admin" required>
+            </div>
+            <div class="form-group" style="margin-bottom:14px;">
+                <label class="form-label" for="password" style="font-size:12px;font-weight:600;">Password</label>
+                <input type="password" id="password" class="form-control" placeholder="••••••••" required>
+            </div>
+
+            <div style="background:var(--bg-card-hover);padding:10px 14px;border-radius:var(--radius-sm);border:1px solid var(--border-color);margin-bottom:16px;font-size:12px;color:var(--text-muted);">
+                <strong>Default System Roles:</strong><br>
+                Operator: <code>operator</code> / <code>operator123</code><br>
+                Admin: <code>admin</code> / <code>admin123</code>
+            </div>
+
+            <div style="margin-bottom:18px;display:flex;align-items:flex-start;gap:8px;">
+                <input type="checkbox" id="consent-check" required checked style="margin-top:3px;">
+                <label for="consent-check" style="font-size:11px;color:var(--text-muted);line-height:1.4;">
+                    I acknowledge that passenger face detection and occupancy tracking are used strictly for transit fleet operations.
+                </label>
+            </div>
+
+            <button type="submit" id="login-btn" class="btn-primary" style="width:100%;justify-content:center;padding:11px;font-weight:700;">
+                <i class="bi bi-box-arrow-in-right"></i> Sign In to Dashboard
+            </button>
+        </form>
+
+        <!-- 2. OPERATOR REGISTRATION FORM -->
+        <form id="register-form" onsubmit="handleRegister(event)" style="display:none;">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+                <div class="form-group">
+                    <label class="form-label" for="reg-username" style="font-size:12px;font-weight:600;">Username *</label>
+                    <input type="text" id="reg-username" class="form-control" placeholder="e.g. up_bus_driver1" minlength="3" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="reg-fullname" style="font-size:12px;font-weight:600;">Full Name *</label>
+                    <input type="text" id="reg-fullname" class="form-control" placeholder="e.g. Ramesh Kumar" required>
+                </div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+                <div class="form-group">
+                    <label class="form-label" for="reg-email" style="font-size:12px;font-weight:600;">Email Address</label>
+                    <input type="email" id="reg-email" class="form-control" placeholder="driver@smartbus.local">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="reg-phone" style="font-size:12px;font-weight:600;">Phone Number</label>
+                    <input type="tel" id="reg-phone" class="form-control" placeholder="+91 98765 43210">
+                </div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
+                <div class="form-group">
+                    <label class="form-label" for="reg-password" style="font-size:12px;font-weight:600;">Password *</label>
+                    <input type="password" id="reg-password" class="form-control" placeholder="Min 4 characters" minlength="4" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="reg-role" style="font-size:12px;font-weight:600;">Account Role</label>
+                    <select id="reg-role" class="form-select" style="padding:8px 12px;font-size:13px;">
+                        <option value="operator" selected>Bus Operator</option>
+                        <option value="admin">Fleet Admin</option>
+                    </select>
+                </div>
+            </div>
+
+            <div style="background:#eff6ff;padding:10px 14px;border-radius:6px;border:1px solid #bfdbfe;margin-bottom:16px;font-size:11px;color:#1e40af;">
+                <i class="bi bi-info-circle-fill"></i> After registration, you will be directed to register your bus and select your official Uttar Pradesh route and stops.
+            </div>
+
+            <button type="submit" id="reg-btn" class="btn-primary" style="width:100%;justify-content:center;padding:11px;font-weight:700;background:#10b981;border-color:#059669;">
+                <i class="bi bi-check-circle-fill"></i> Complete Registration & Setup Bus
+            </button>
+        </form>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script>
+    function switchAuthTab(tab) {
+        const signinBtn = document.getElementById("tab-btn-signin");
+        const regBtn = document.getElementById("tab-btn-register");
+        const loginForm = document.getElementById("login-form");
+        const regForm = document.getElementById("register-form");
+
+        if (tab === "register") {
+            loginForm.style.display = "none";
+            regForm.style.display = "block";
+            regBtn.style.background = "var(--accent-primary)";
+            regBtn.style.color = "#fff";
+            signinBtn.style.background = "transparent";
+            signinBtn.style.color = "var(--text-muted)";
+        } else {
+            loginForm.style.display = "block";
+            regForm.style.display = "none";
+            signinBtn.style.background = "var(--accent-primary)";
+            signinBtn.style.color = "#fff";
+            regBtn.style.background = "transparent";
+            regBtn.style.color = "var(--text-muted)";
+        }
+    }
+
+    async function handleLogin(e) {
+        e.preventDefault();
+        const username = document.getElementById("username").value.trim();
+        const password = document.getElementById("password").value.trim();
+        const btn = document.getElementById("login-btn");
+
+        btn.disabled = true;
+        btn.innerHTML = `<i class="bi bi-hourglass-split spin"></i> Authenticating...`;
+
+        try {
+            const res = await fetch("/api/auth/login", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ username, password })
+            });
+            const data = await res.json();
+            btn.disabled = false;
+            btn.innerHTML = `<i class="bi bi-box-arrow-in-right"></i> Sign In to Dashboard`;
+
+            if (res.ok) {
+                showToast("Login successful!", "success");
+                window.location.href = data.redirect_url || "/dashboard";
+            } else {
+                showToast(data.error || "Authentication failed", "error");
+            }
+        } catch (err) {
+            btn.disabled = false;
+            btn.innerHTML = `<i class="bi bi-box-arrow-in-right"></i> Sign In to Dashboard`;
+            showToast("Server connection error: " + err.message, "error");
+        }
+    }
+
+    async function handleRegister(e) {
+        e.preventDefault();
+        const btn = document.getElementById("reg-btn");
+        const username = document.getElementById("reg-username").value.trim();
+        const full_name = document.getElementById("reg-fullname").value.trim();
+        const email = document.getElementById("reg-email").value.trim();
+        const phone = document.getElementById("reg-phone").value.trim();
+        const password = document.getElementById("reg-password").value.trim();
+        const role = document.getElementById("reg-role").value;
+
+        if (!username || !password) {
+            showToast("Username and password are required.", "error");
+            return;
+        }
+
+        btn.disabled = true;
+        btn.innerHTML = `<i class="bi bi-hourglass-split spin"></i> Creating Account...`;
+
+        try {
+            const res = await fetch("/api/auth/register", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ username, full_name, email, phone, password, role })
+            });
+            const data = await res.json();
+            btn.disabled = false;
+            btn.innerHTML = `<i class="bi bi-check-circle-fill"></i> Complete Registration & Setup Bus`;
+
+            if (res.ok) {
+                showToast(data.message || "Registration successful!", "success");
+                setTimeout(() => {
+                    window.location.href = data.redirect_url || "/buses?setup=1";
+                }, 800);
+            } else {
+                showToast(data.error || "Registration failed.", "error");
+            }
+        } catch (err) {
+            btn.disabled = false;
+            btn.innerHTML = `<i class="bi bi-check-circle-fill"></i> Complete Registration & Setup Bus`;
+            showToast("Registration network error: " + err.message, "error");
+        }
+    }
+    </script>
+</body>
+</html>

@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+
+{% block page_title %}Live Passenger Monitoring{% endblock %}
+
+{% block content %}
+<!-- Filter Controls -->
+<div class="card" style="padding:16px 20px;">
+    <div style="display:grid;grid-template-columns: 1fr 1fr 1.5fr auto;gap:16px;align-items:flex-end;">
+        <div>
+            <label class="form-label" for="filter-journey">Filter Journey</label>
+            <select id="filter-journey" class="form-select" onchange="loadPassengers()">
+                <option value="">All Journeys</option>
+            </select>
+        </div>
+
+        <div>
+            <label class="form-label" for="filter-status">Presence Status</label>
+            <select id="filter-status" class="form-select" onchange="loadPassengers()">
+                <option value="">All Statuses</option>
+                <option value="PRESENT">Present</option>
+                <option value="POSSIBLY_ABSENT">Possibly Absent</option>
+                <option value="EXIT_UNCONFIRMED">Exit Unconfirmed</option>
+                <option value="EXIT_CONFIRMED">Exit Confirmed</option>
+                <option value="NEEDS_REVIEW">Needs Review</option>
+            </select>
+        </div>
+
+        <div>
+            <label class="form-label" for="search-passenger">Search Person ID</label>
+            <input type="text" id="search-passenger" class="form-control" placeholder="Search (e.g. P001)" oninput="loadPassengers()">
+        </div>
+
+        <div>
+            <button class="btn-secondary" onclick="loadPassengers()">
+                <i class="bi bi-arrow-clockwise"></i> Refresh
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Passengers Table -->
+<div class="card">
+    <div class="card-title">
+        <span><i class="bi bi-person-lines-fill text-primary"></i> Tracked Passengers</span>
+        <span style="font-size:12px;font-weight:normal;color:var(--text-muted);">
+            Provisional boarding & exit estimates based on camera observations
+        </span>
+    </div>
+
+    <div class="table-responsive">
+        <table class="custom-table">
+            <thead>
+                <tr>
+                    <th>Face Crop</th>
+                    <th>Person ID</th>
+                    <th>Status</th>
+                    <th>First Seen (Est. Boarding)</th>
+                    <th>Last Seen (Confirmed)</th>
+                    <th>Last Known GPS</th>
+                    <th>Presence Record</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody id="passengers-tbody">
+                <tr><td colspan="8" class="text-center py-4" style="color:var(--text-muted)">Loading passenger tracking data...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Passenger Timeline & Manual Review Modal -->
+<div class="modal-overlay" id="passenger-modal">
+    <div class="modal-box" style="max-width:760px;">
+        <div class="modal-header">
+            <div>
+                <h3 class="modal-title" id="modal-passenger-id">Passenger Timeline</h3>
+                <span class="badge-status badge-present" id="modal-status-badge">PRESENT</span>
+            </div>
+            <button class="modal-close-btn" onclick="closePassengerModal()">&times;</button>
+        </div>
+
+        <!-- Location & Estimates Summary -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;background:var(--bg-card-hover);padding:14px;border-radius:var(--radius-sm);border:1px solid var(--border-color);margin-bottom:20px;">
+            <div>
+                <div style="font-size:11px;text-transform:uppercase;color:var(--text-muted);font-weight:600;">Provisional Boarding:</div>
+                <div id="modal-first-seen" style="font-size:13px;font-weight:600;margin-top:2px;">-</div>
+                <div id="modal-first-gps" style="font-size:12px;color:var(--text-muted);">-</div>
+            </div>
+            <div>
+                <div style="font-size:11px;text-transform:uppercase;color:var(--text-muted);font-weight:600;">Last Confirmed Presence:</div>
+                <div id="modal-last-seen" style="font-size:13px;font-weight:600;margin-top:2px;">-</div>
+                <div id="modal-last-gps" style="font-size:12px;color:var(--text-muted);">-</div>
+            </div>
+        </div>
+
+        <!-- Photo Observations Gallery -->
+        <div style="margin-bottom:20px;">
+            <h4 style="font-size:14px;font-weight:600;margin-bottom:10px;">Observation Face Crops:</h4>
+            <div id="modal-observations-list" style="overflow-x:auto;white-space:nowrap;padding:4px 0;"></div>
+        </div>
+
+        <!-- Event History Timeline -->
+        <div style="margin-bottom:24px;">
+            <h4 style="font-size:14px;font-weight:600;margin-bottom:10px;">Observation & Presence Timeline:</h4>
+            <div class="timeline" id="modal-timeline-list"></div>
+        </div>
+
+        <!-- Operator Manual Review / Confirmation Actions -->
+        <div style="border-top:1px solid var(--border-color);padding-top:16px;display:flex;align-items:center;justify-content:space-between;">
+            <div style="font-size:13px;color:var(--text-muted);">
+                <i class="bi bi-shield-check"></i> Operator Audit Trail Active
+            </div>
+            <div style="display:flex;gap:10px;">
+                <button class="btn-secondary" style="color:var(--status-exit-unconfirmed-text);" onclick="submitManualReview('EXIT_CONFIRMED')">
+                    <i class="bi bi-door-open-fill"></i> Confirm Exit
+                </button>
+                <button class="btn-secondary" style="color:var(--status-present-text);" onclick="submitManualReview('PRESENT')">
+                    <i class="bi bi-check2-circle"></i> Verify Present
+                </button>
+                <button class="btn-secondary" style="color:var(--status-needs-review-text);" onclick="submitManualReview('NEEDS_REVIEW')">
+                    <i class="bi bi-flag-fill"></i> Flag for Review
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/monitoring.js') }}"></script>
+{% endblock %}

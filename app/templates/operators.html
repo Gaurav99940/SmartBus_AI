@@ -1,0 +1,298 @@
+{% extends "base.html" %}
+
+{% block page_title %}Operator Directory & Bus Assignments{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="card" style="padding:16px 20px;margin-bottom:20px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+        <div>
+            <h3 style="font-size:17px;font-weight:700;margin-bottom:4px;color:var(--text-main);">Bus Operator Management</h3>
+            <p style="font-size:13px;color:var(--text-muted);margin:0;">Manage certified bus drivers, route assignments, device telemetry permissions, and bus links.</p>
+        </div>
+        <div style="display:flex;gap:10px;">
+            <button class="btn-secondary" onclick="loadOperators()"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
+            <a href="{{ url_for('page_buses') }}" class="btn-primary"><i class="bi bi-bus-front"></i> Fleet Registry</a>
+        </div>
+    </div>
+</div>
+
+<!-- Operator KPI Summary -->
+<div class="metrics-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom:20px;">
+    <div class="metric-card">
+        <div class="metric-header">
+            <span class="metric-title">Registered Operators</span>
+            <div class="metric-icon"><i class="bi bi-people"></i></div>
+        </div>
+        <div class="metric-value" id="kpi-total-operators">0</div>
+        <div class="metric-subtext">Active driver accounts</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-header">
+            <span class="metric-title">Assigned to Bus</span>
+            <div class="metric-icon" style="background:var(--status-present-bg);color:var(--status-present-text);"><i class="bi bi-link-45deg"></i></div>
+        </div>
+        <div class="metric-value" id="kpi-assigned-operators">0</div>
+        <div class="metric-subtext">Operating assigned routes</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-header">
+            <span class="metric-title">Unassigned</span>
+            <div class="metric-icon" style="background:var(--status-exit-unconfirmed-bg);color:var(--status-exit-unconfirmed-text);"><i class="bi bi-person-exclamation"></i></div>
+        </div>
+        <div class="metric-value" id="kpi-unassigned-operators">0</div>
+        <div class="metric-subtext">Awaiting bus assignment</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-header">
+            <span class="metric-title">Fleet Vehicles</span>
+            <div class="metric-icon" style="background:var(--accent-primary-light);color:var(--accent-primary);"><i class="bi bi-bus-front"></i></div>
+        </div>
+        <div class="metric-value" id="kpi-total-fleet">0</div>
+        <div class="metric-subtext">Available transit buses</div>
+    </div>
+</div>
+
+<!-- Operators Table Card -->
+<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:12px;">
+        <div style="flex:1;min-width:240px;max-width:400px;">
+            <input type="text" id="operator-search" class="form-control" placeholder="Search by name, username, or bus..." oninput="filterOperators()">
+        </div>
+    </div>
+
+    <div class="table-responsive">
+        <table class="custom-table">
+            <thead>
+                <tr>
+                    <th>Operator</th>
+                    <th>Email & Contact</th>
+                    <th>Currently Assigned Bus</th>
+                    <th>All Assigned Buses</th>
+                    <th>Account Created</th>
+                    <th>Last Active</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="operators-tbody">
+                <tr><td colspan="7" class="text-center py-4" style="color:var(--text-muted);">Loading operators...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Assign Bus Modal -->
+<div class="modal-overlay" id="assign-bus-modal" style="display:none;">
+    <div class="modal-box" style="max-width:500px;">
+        <div class="modal-header">
+            <div>
+                <h3 class="modal-title">Assign Operator to Bus</h3>
+                <p style="font-size:12px;color:var(--text-muted);margin:2px 0 0 0;" id="assign-modal-subtitle">Select a vehicle from the fleet</p>
+            </div>
+            <button class="modal-close" onclick="closeAssignModal()"><i class="bi bi-x"></i></button>
+        </div>
+        <div class="modal-body" style="padding:20px;">
+            <div id="assign-alert" style="display:none;margin-bottom:14px;padding:10px 14px;border-radius:6px;font-size:13px;"></div>
+            <input type="hidden" id="assign-operator-id">
+
+            <div style="margin-bottom:16px;">
+                <label class="form-label" style="font-weight:600;font-size:12px;">Operator</label>
+                <input type="text" id="assign-operator-name" class="form-control" readonly style="background:var(--bg-app);">
+            </div>
+
+            <div style="margin-bottom:16px;">
+                <label class="form-label" style="font-weight:600;font-size:12px;">Assign Fleet Bus *</label>
+                <select id="assign-bus-select" class="form-select">
+                    <option value="">-- Choose Bus --</option>
+                </select>
+                <small style="font-size:11px;color:var(--text-muted);display:block;margin-top:4px;">
+                    Associates the operator with this vehicle for live passenger tracking and GPS reporting.
+                </small>
+            </div>
+
+            <div style="display:flex;justify-content:flex-end;gap:10px;">
+                <button type="button" class="btn-secondary" onclick="closeAssignModal()">Cancel</button>
+                <button type="button" id="btn-save-assignment" class="btn-primary" onclick="saveAssignment()">
+                    <i class="bi bi-check-lg"></i> Confirm Assignment
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let allOperators = [];
+let allBusesList = [];
+
+document.addEventListener("DOMContentLoaded", function() {
+    loadOperators();
+    loadBusesList();
+});
+
+async function loadBusesList() {
+    try {
+        const res = await fetch("/api/buses");
+        if (res.ok) {
+            allBusesList = await res.json();
+            document.getElementById("kpi-total-fleet").textContent = allBusesList.length;
+            populateBusSelect();
+        }
+    } catch (e) {
+        console.error("Failed to load buses list", e);
+    }
+}
+
+function populateBusSelect() {
+    const sel = document.getElementById("assign-bus-select");
+    sel.innerHTML = '<option value="">-- Choose Bus --</option>' + 
+        allBusesList.map(b => `<option value="${b.id}">${escapeHtml(b.registration_number || b.bus_number)} - ${escapeHtml(b.bus_name || 'Bus')} (${escapeHtml(b.route_name || 'Route')})</option>`).join("");
+}
+
+async function loadOperators() {
+    const tbody = document.getElementById("operators-tbody");
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4" style="color:var(--text-muted);"><i class="bi bi-arrow-repeat spin"></i> Loading operators...</td></tr>';
+
+    try {
+        const res = await fetch("/api/buses/operators");
+        if (!res.ok) throw new Error("Failed to load operators");
+        allOperators = await res.json();
+
+        // Update KPIs
+        const total = allOperators.length;
+        const assigned = allOperators.filter(o => o.current_bus_id).length;
+        document.getElementById("kpi-total-operators").textContent = total;
+        document.getElementById("kpi-assigned-operators").textContent = assigned;
+        document.getElementById("kpi-unassigned-operators").textContent = total - assigned;
+
+        renderOperatorsTable(allOperators);
+    } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-danger">Error: ${err.message}</td></tr>`;
+    }
+}
+
+function filterOperators() {
+    const q = (document.getElementById("operator-search").value || "").toLowerCase().trim();
+    const filtered = allOperators.filter(o => {
+        return !q || 
+            (o.username && o.username.toLowerCase().includes(q)) ||
+            (o.full_name && o.full_name.toLowerCase().includes(q)) ||
+            (o.email && o.email.toLowerCase().includes(q)) ||
+            (o.current_bus && o.current_bus.registration_number && o.current_bus.registration_number.toLowerCase().includes(q)) ||
+            (o.current_bus && o.current_bus.bus_name && o.current_bus.bus_name.toLowerCase().includes(q));
+    });
+    renderOperatorsTable(filtered);
+}
+
+function renderOperatorsTable(operators) {
+    const tbody = document.getElementById("operators-tbody");
+    if (!operators.length) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4" style="color:var(--text-muted);">No operators found.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = operators.map(op => {
+        const curBus = op.current_bus;
+        return `
+            <tr>
+                <td>
+                    <div style="font-weight:700;font-size:14px;color:var(--text-main);">${escapeHtml(op.full_name || op.username)}</div>
+                    <div style="font-size:12px;color:var(--text-muted);font-family:monospace;">@${escapeHtml(op.username)}</div>
+                </td>
+                <td>
+                    <div style="font-size:13px;color:var(--text-main);">${escapeHtml(op.email || 'No email')}</div>
+                    <div style="font-size:11px;color:var(--text-muted);">${op.consent_accepted ? '<span class="text-success"><i class="bi bi-check-circle"></i> Onboarded</span>' : '<span class="text-warning"><i class="bi bi-clock"></i> Pending Consent</span>'}</div>
+                </td>
+                <td>
+                    ${curBus ? `
+                        <div style="font-weight:600;font-size:13px;color:var(--accent-primary);">${escapeHtml(curBus.registration_number || curBus.bus_number)}</div>
+                        <div style="font-size:11px;color:var(--text-muted);">${escapeHtml(curBus.bus_name || '')} &bull; ${escapeHtml(curBus.route_name || '')}</div>
+                    ` : `
+                        <span class="badge-status badge-exit-confirmed" style="font-size:11px;">Unassigned</span>
+                    `}
+                </td>
+                <td>
+                    <div style="font-size:12px;color:var(--text-main);">
+                        ${op.assigned_bus_count > 0 ? `${op.assigned_bus_count} vehicle(s)` : '<span style="color:var(--text-muted);">0</span>'}
+                    </div>
+                </td>
+                <td>
+                    <div style="font-size:12px;color:var(--text-muted);">${op.created_at || 'N/A'}</div>
+                </td>
+                <td>
+                    <div style="font-size:12px;color:var(--text-muted);">${op.last_login || 'Never'}</div>
+                </td>
+                <td>
+                    <button class="btn-secondary" style="font-size:12px;padding:4px 8px;" onclick="openAssignModal(${op.id}, '${escapeHtml(op.full_name || op.username)}', ${op.current_bus_id || 'null'})">
+                        <i class="bi bi-pencil-square"></i> Assign Bus
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join("");
+}
+
+function openAssignModal(opId, opName, curBusId) {
+    document.getElementById("assign-operator-id").value = opId;
+    document.getElementById("assign-operator-name").value = opName;
+    document.getElementById("assign-bus-select").value = curBusId || "";
+    document.getElementById("assign-alert").style.display = "none";
+    document.getElementById("assign-bus-modal").style.display = "flex";
+}
+
+function closeAssignModal() {
+    document.getElementById("assign-bus-modal").style.display = "none";
+}
+
+async function saveAssignment() {
+    const opId = document.getElementById("assign-operator-id").value;
+    const busId = document.getElementById("assign-bus-select").value;
+    const alertBox = document.getElementById("assign-alert");
+    const btn = document.getElementById("btn-save-assignment");
+
+    if (!busId) {
+        alertBox.style.display = "block";
+        alertBox.style.background = "var(--status-needs-review-bg)";
+        alertBox.style.color = "var(--status-needs-review-text)";
+        alertBox.textContent = "Please select a bus.";
+        return;
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-arrow-repeat spin"></i> Saving...';
+
+    try {
+        const res = await fetch("/api/buses/operators/assign", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ operator_id: parseInt(opId), bus_id: parseInt(busId) })
+        });
+        const data = await res.json();
+        if (res.ok) {
+            closeAssignModal();
+            showToast(data.message || "Bus assigned successfully.");
+            loadOperators();
+        } else {
+            alertBox.style.display = "block";
+            alertBox.style.background = "var(--status-needs-review-bg)";
+            alertBox.style.color = "var(--status-needs-review-text)";
+            alertBox.textContent = data.error || "Assignment failed.";
+        }
+    } catch (e) {
+        alertBox.style.display = "block";
+        alertBox.style.background = "var(--status-needs-review-bg)";
+        alertBox.style.color = "var(--status-needs-review-text)";
+        alertBox.textContent = "Error: " + e.message;
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-check-lg"></i> Confirm Assignment';
+    }
+}
+
+function escapeHtml(text) {
+    if (!text) return "";
+    return text.toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+</script>
+{% endblock %}

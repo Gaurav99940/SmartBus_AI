@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Smart Bus AI Passenger Tracking{% endblock %}</title>
+    
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+    <!-- Application Theme CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=3.1">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <aside class="app-sidebar">
+            <div class="sidebar-brand">
+                <div class="brand-icon">
+                    <i class="bi bi-bus-front-fill"></i>
+                </div>
+                <div class="brand-text">
+                    <h1>SmartBus AI</h1>
+                    <span>Passenger Tracking</span>
+                </div>
+            </div>
+
+            <ul class="sidebar-menu">
+                {% if session.get('role') == 'admin' %}
+                    <!-- Admin Navigation (No Photo Upload) -->
+                    <li class="sidebar-item">
+                        <a href="{{ url_for('page_dashboard') }}" class="sidebar-link {% if active_page == 'dashboard' %}active{% endif %}">
+                            <i class="bi bi-speedometer2"></i>
+                            <span>Dashboard</span>
+                        </a>
+                    </li>
+                    <li class="sidebar-item">
+                        <a href="{{ url_for('page_buses') }}" class="sidebar-link {% if active_page == 'buses' %}active{% endif %}">
+                            <i class="bi bi-bus-front"></i>
+                            <span>Bus Management</span>
+                        </a>
+                    </li>
+                    <li class="sidebar-item">
+                        <a href="{{ url_for('page_monitoring') }}" class="sidebar-link {% if active_page == 'monitoring' %}active{% endif %}">
+                            <i class="bi bi-people-fill"></i>
+                            <span>Live Bus Monitoring</span>
+                        </a>
+                    </li>
+                    <li class="sidebar-item">
+                        <a href="{{ url_for('page_passengers') }}" class="sidebar-link {% if active_page == 'passengers' %}active{% endif %}">
+                            <i class="bi bi-person-lines-fill"></i>
+                            <span>Passenger Directory</span>
+                        </a>
+                    </li>
+                    <li class="sidebar-item">
+                        <a href="{{ url_for('page_journeys') }}" class="sidebar-link {% if active_page == 'journeys' %}active{% endif %}">
+                            <i class="bi bi-signpost-split-fill"></i>
+                            <span>Journey History</span>
+                        </a>
+                    </li>
+                    <li class="sidebar-item">
+                        <a href="{{ url_for('page_map') }}" class="sidebar-link {% if active_page == 'map' %}active{% endif %}">
+                            <i class="bi bi-map-fill"></i>
+                            <span>GPS Map</span>
+                        </a>
+                    </li>
+                    <li class="sidebar-item">
+                        <a href="{{ url_for('page_route_timeline') }}" class="sidebar-link {% if active_page == 'route_timeline' %}active{% endif %}">
+                            <i class="bi bi-signpost-2-fill"></i>
+                            <span>Route & Stops Timeline</span>
+                        </a>
+                    </li>
+                    <li class="sidebar-item">
+                        <a href="{{ url_for('page_reports') }}" class="sidebar-link {% if active_page == 'reports' %}active{% endif %}">
+                            <i class="bi bi-file-earmark-spreadsheet-fill"></i>
+                            <span>Reports & Export</span>
+                        </a>
+                    </li>
+                    <li class="sidebar-item">
+                        <a href="{{ url_for('page_operators') }}" class="sidebar-link {% if active_page == 'operators' %}active{% endif %}">
+                            <i class="bi bi-person-badge-fill"></i>
+                            <span>Operators</span>
+                        </a>
+                    </li>
+                    <li class="sidebar-item">
+                        <a href="{{ url_for('page_settings') }}" class="sidebar-link {% if active_page == 'settings' %}active{% endif %}">
+                            <i class="bi bi-gear-fill"></i>
+                            <span>Settings</span>
+                        </a>
+                    </li>
+                {% else %}
+                    <!-- Operator Navigation (Includes Bus Registration & Photo Upload) -->
+                    <li class="sidebar-item">
+                        <a href="{{ url_for('page_dashboard') }}" class="sidebar-link {% if active_page == 'dashboard' %}active{% endif %}">
+                            <i class="bi bi-speedometer2"></i>
+                            <span>Dashboard</span>
+                        </a>
+                    </li>
+                    <li class="sidebar-item">
+                        <a href="{{ url_for('page_buses') }}" class="sidebar-link {% if active_page == 'buses' %}active{% endif %}">
+                            <i class="bi bi-bus-front"></i>
+                            <span>Bus Registration</span>
+                        </a>
+                    </li>
+                    <li class="sidebar-item">
+                        <a href="{{ url_for('page_upload') }}" class="sidebar-link {% if active_page == 'upload' %}active{% endif %}">
+                            <i class="bi bi-camera-fill"></i>
+                            <span>Upload Bus Photo</span>
+                        </a>
+                    </li>
+                    <li class="sidebar-item">
+                        <a href="{{ url_for('page_monitoring') }}" class="sidebar-link {% if active_page == 'monitoring' %}active{% endif %}">
+                            <i class="bi bi-people-fill"></i>
+                            <span>Live Monitoring</span>
+                        </a>
+                    </li>
+                    <li class="sidebar-item">
+                        <a href="{{ url_for('page_passengers') }}" class="sidebar-link {% if active_page == 'passengers' %}active{% endif %}">
+                            <i class="bi bi-person-lines-fill"></i>
+                            <span>Passenger Directory</span>
+                        </a>
+                    </li>
+                    <li class="sidebar-item">
+                        <a href="{{ url_for('page_journeys') }}" class="sidebar-link {% if active_page == 'journeys' %}active{% endif %}">
+                            <i class="bi bi-signpost-split-fill"></i>
+                            <span>Journey History</span>
+                        </a>
+                    </li>
+                    <li class="sidebar-item">
+                        <a href="{{ url_for('page_map') }}" class="sidebar-link {% if active_page == 'map' %}active{% endif %}">
+                            <i class="bi bi-map-fill"></i>
+                            <span>GPS Map</span>
+                        </a>
+                    </li>
+                    <li class="sidebar-item">
+                        <a href="{{ url_for('page_route_timeline') }}" class="sidebar-link {% if active_page == 'route_timeline' %}active{% endif %}">
+                            <i class="bi bi-signpost-2-fill"></i>
+                            <span>Route & Stops Timeline</span>
+                        </a>
+                    </li>
+                    <li class="sidebar-item">
+                        <a href="{{ url_for('page_settings') }}" class="sidebar-link {% if active_page == 'settings' %}active{% endif %}">
+                            <i class="bi bi-gear-fill"></i>
+                            <span>Settings</span>
+                        </a>
+                    </li>
+                {% endif %}
+            </ul>
+
+            <div class="sidebar-footer">
+                <div class="user-badge">
+                    <div class="user-avatar" id="user-avatar-display">U</div>
+                    <div class="user-details">
+                        <div class="user-name" id="user-name-display">Operator</div>
+                        <div class="user-role" id="user-role-display">Role</div>
+                    </div>
+                </div>
+                <button onclick="logoutUser()" class="btn-secondary" style="padding:6px 10px;font-size:12px;" title="Logout">
+                    <i class="bi bi-box-arrow-right"></i>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="app-main">
+            <!-- Header -->
+            <header class="app-header">
+                <div class="header-title">
+                    <h2>{% block page_title %}Dashboard{% endblock %}</h2>
+                </div>
+                <div class="header-actions">
+                    <!-- Theme Toggle -->
+                    <button class="theme-toggle-btn" id="theme-toggle-btn" title="Toggle Light / Dark Mode">
+                        <i class="bi bi-moon-stars-fill" id="theme-toggle-icon"></i>
+                    </button>
+                </div>
+            </header>
+
+            <!-- Page Content -->
+            <div class="page-content">
+                {% block content %}{% endblock %}
+            </div>
+        </main>
+    </div>
+
+    <!-- Biometric Notice / Consent Modal -->
+    <div class="modal-overlay" id="consent-modal">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h3 class="modal-title"><i class="bi bi-shield-lock-fill text-primary"></i> Biometric Data & AI Tracking Notice</h3>
+            </div>
+            <div style="font-size:14px;line-height:1.6;color:var(--text-main);">
+                <p>This application utilizes computer vision (MTCNN face detection and FaceNet deep embeddings) to track passengers across sequential interior bus photos.</p>
+                <div class="privacy-notice-box" style="margin-top:12px;">
+                    <strong>Mandatory Compliance Notice:</strong>
+                    <ul style="margin:8px 0 0 16px;">
+                        <li>Face embeddings are sensitive biometric representations used solely for journey occupancy and attendance tracking.</li>
+                        <li>Raw biometric vectors are never exported in public CSV reports.</li>
+                        <li>First-seen and last-seen timestamps are observation estimates, not guaranteed exit/boarding times.</li>
+                    </ul>
+                </div>
+                <div style="margin-top:20px;text-align:right;">
+                    <button class="btn-primary" onclick="acceptBiometricConsent()">
+                        <i class="bi bi-check-lg"></i> I Understand & Accept
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modals Block for Page-Specific Modals (Rendered outside .app-container at body root) -->
+    {% block modals %}{% endblock %}
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <!-- Core JS -->
+    <script src="{{ url_for('static', filename='js/main.js') }}?v=3.1"></script>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,422 @@
+{% extends "base.html" %}
+
+{% block page_title %}Journey Management & History{% endblock %}
+
+{% block content %}
+<div class="card" style="padding:16px 20px;display:flex;align-items:center;justify-content:space-between;flex-direction:row;flex-wrap:wrap;gap:12px;">
+    <div>
+        <h3 style="font-size:16px;font-weight:600;margin-bottom:4px;">Bus Journeys & History</h3>
+        <p style="font-size:13px;color:var(--text-muted);margin:0;">Manage journeys, view passenger timelines, and delete historical data</p>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;">
+        <button class="btn-secondary" onclick="openClearHistoryModal()" style="color:#ef4444;border-color:rgba(239,68,68,0.35);" title="Analyze storage and delete old journey data">
+            <i class="bi bi-trash3 text-danger"></i> Delete History / Cleanup
+        </button>
+        <button class="btn-primary" onclick="openNewJourneyModal()">
+            <i class="bi bi-plus-circle-fill"></i> Start New Journey
+        </button>
+    </div>
+</div>
+
+<div class="card">
+    <div class="table-responsive">
+        <table class="custom-table">
+            <thead>
+                <tr>
+                    <th>Journey Code</th>
+                    <th>Bus #</th>
+                    <th>Route (Origin &rarr; Destination)</th>
+                    <th>Status</th>
+                    <th>Start Time</th>
+                    <th>Passengers</th>
+                    <th>Uploads</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="journeys-tbody">
+                <tr><td colspan="8" class="text-center py-4" style="color:var(--text-muted)">Loading journeys...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- New Journey Modal -->
+<div class="modal-overlay" id="new-journey-modal">
+    <div class="modal-box" style="max-width:500px;">
+        <div class="modal-header">
+            <h3 class="modal-title"><i class="bi bi-signpost-split text-primary"></i> Create New Bus Journey</h3>
+            <button class="modal-close-btn" onclick="closeNewJourneyModal()">&times;</button>
+        </div>
+
+        <form id="new-journey-form" onsubmit="handleCreateJourney(event)">
+            <div class="form-group">
+                <label class="form-label" for="bus-number">Bus Number / Unit ID</label>
+                <input type="text" id="bus-number" class="form-control" placeholder="e.g. BUS-101" required value="BUS-101">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="journey-origin">Route Origin / Starting Terminal</label>
+                <input type="text" id="journey-origin" class="form-control" placeholder="e.g. Civic Center Station" required>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="journey-dest">Route Destination / Terminal</label>
+                <input type="text" id="journey-dest" class="form-control" placeholder="e.g. Harbor Terminal" required>
+            </div>
+
+            <div style="margin-top:24px;display:flex;justify-content:flex-end;gap:10px;">
+                <button type="button" class="btn-secondary" onclick="closeNewJourneyModal()">Cancel</button>
+                <button type="submit" class="btn-primary" id="save-journey-btn">
+                    <i class="bi bi-check-lg"></i> Launch Journey
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Data History Analysis & Delete Cleanup Modal -->
+<div class="modal-overlay" id="history-cleanup-modal" onclick="if(event.target === this) closeClearHistoryModal()">
+    <div class="modal-box" style="max-width:760px;max-height:90vh;overflow-y:auto;">
+        <div class="modal-header">
+            <div>
+                <h3 class="modal-title"><i class="bi bi-trash3 text-danger"></i> Delete Historical Transit Data</h3>
+                <p style="font-size:12px;color:var(--text-muted);margin:2px 0 0 0;">Analyze storage consumption, delete old passenger history, and purge completed journeys</p>
+            </div>
+            <button class="modal-close-btn" onclick="closeClearHistoryModal()">&times;</button>
+        </div>
+        <div class="modal-body" style="padding:20px;">
+            <div id="history-cleanup-alert" style="display:none;margin-bottom:14px;padding:10px 14px;border-radius:6px;font-size:13px;"></div>
+
+            <!-- Storage Metrics Breakdown -->
+            <div style="display:grid;grid-template-columns: repeat(4, 1fr);gap:12px;margin-bottom:20px;">
+                <div style="background:var(--bg-card-hover);padding:12px;border-radius:var(--radius-sm);border:1px solid var(--border-color);text-align:center;">
+                    <div style="font-size:11px;color:var(--text-muted);font-weight:600;">Photo Uploads</div>
+                    <div style="font-size:18px;font-weight:800;color:var(--text-main);" id="h-storage-uploads-mb">0 MB</div>
+                    <div style="font-size:10px;color:var(--text-muted);" id="h-storage-uploads-cnt">0 photos</div>
+                </div>
+                <div style="background:var(--bg-card-hover);padding:12px;border-radius:var(--radius-sm);border:1px solid var(--border-color);text-align:center;">
+                    <div style="font-size:11px;color:var(--text-muted);font-weight:600;">Face Crops</div>
+                    <div style="font-size:18px;font-weight:800;color:var(--text-main);" id="h-storage-crops-mb">0 MB</div>
+                    <div style="font-size:10px;color:var(--text-muted);" id="h-storage-crops-cnt">0 crops</div>
+                </div>
+                <div style="background:var(--bg-card-hover);padding:12px;border-radius:var(--radius-sm);border:1px solid var(--border-color);text-align:center;">
+                    <div style="font-size:11px;color:var(--text-muted);font-weight:600;">Database Storage</div>
+                    <div style="font-size:18px;font-weight:800;color:var(--text-main);" id="h-storage-db-mb">0 MB</div>
+                    <div style="font-size:10px;color:var(--text-muted);">Indexed tables</div>
+                </div>
+                <div style="background:var(--accent-primary-light);padding:12px;border-radius:var(--radius-sm);border:1px solid var(--accent-primary);text-align:center;">
+                    <div style="font-size:11px;color:var(--accent-primary);font-weight:700;">Total Storage Used</div>
+                    <div style="font-size:18px;font-weight:800;color:var(--accent-primary);" id="h-storage-total-mb">0 MB</div>
+                    <div style="font-size:10px;color:var(--text-muted);">Reclaimable space</div>
+                </div>
+            </div>
+
+            <!-- Purge Controls -->
+            <div style="background:var(--bg-card-hover);padding:16px;border-radius:var(--radius-sm);border:1px solid var(--border-color);margin-bottom:20px;">
+                <h4 style="font-size:14px;font-weight:700;margin:0 0 10px 0;color:var(--text-main);">
+                    <i class="bi bi-trash3 text-danger"></i> Bulk Cleanup Options
+                </h4>
+                <div style="display:grid;grid-template-columns: 2fr 1fr auto;gap:12px;align-items:center;">
+                    <div>
+                        <label class="form-label" style="font-size:12px;font-weight:600;">Select Cleanup Criteria:</label>
+                        <select id="h-cleanup-select" class="form-select">
+                            <option value="all_completed">All Completed Journeys & Photos (Any age)</option>
+                            <option value="all_data">All Journeys & Photo History (Full Reset / Clean Slate)</option>
+                            <option value="older_than_days" data-days="7">Completed journeys older than 7 days</option>
+                            <option value="older_than_days" data-days="15">Completed journeys older than 15 days</option>
+                            <option value="older_than_days" data-days="30">Completed journeys older than 30 days</option>
+                        </select>
+                    </div>
+                    <div style="display:flex;flex-direction:column;gap:6px;padding-top:16px;">
+                        <label style="font-size:12px;display:flex;align-items:center;gap:6px;cursor:pointer;">
+                            <input type="checkbox" id="h-delete-files" checked> Delete photos & face crops on disk
+                        </label>
+                        <label style="font-size:12px;display:flex;align-items:center;gap:6px;cursor:pointer;">
+                            <input type="checkbox" id="h-delete-audits"> Also prune historical audit logs
+                        </label>
+                    </div>
+                    <div style="padding-top:12px;">
+                        <button class="btn-primary" style="background:#dc2626;border-color:#dc2626;" onclick="executeHistoryCleanup()" id="btn-run-h-cleanup">
+                            <i class="bi bi-trash3"></i> Delete History
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Breakdown Table -->
+            <div>
+                <h4 style="font-size:14px;font-weight:700;margin:0 0 10px 0;color:var(--text-main);">
+                    Historical Journeys Breakdown
+                </h4>
+                <div class="table-responsive" style="max-height:240px;overflow-y:auto;border:1px solid var(--border-color);border-radius:var(--radius-sm);">
+                    <table class="custom-table" style="font-size:12px;">
+                        <thead>
+                            <tr>
+                                <th>Journey Code</th>
+                                <th>Bus</th>
+                                <th>Route</th>
+                                <th>Status</th>
+                                <th>Photos</th>
+                                <th>Passengers</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="h-breakdown-tbody">
+                            <tr><td colspan="7" class="text-center py-3" style="color:var(--text-muted)">Loading breakdown...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer" style="padding:14px 20px;border-top:1px solid var(--border-color);display:flex;justify-content:flex-end;">
+            <button type="button" class="btn-secondary" onclick="closeClearHistoryModal()">Close</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+    loadJourneysTable();
+});
+
+async function loadJourneysTable() {
+    try {
+        const res = await fetch("/api/journeys");
+        if (!res.ok) return;
+        const journeys = await res.json();
+        const tbody = document.getElementById("journeys-tbody");
+        tbody.innerHTML = "";
+
+        if (journeys.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="8" class="text-center py-4" style="color:var(--text-muted)">No journeys found. Click 'Start New Journey' to create one.</td></tr>`;
+            return;
+        }
+
+        journeys.forEach(j => {
+            const tr = document.createElement("tr");
+            const statusBadge = j.status === "active" 
+                ? `<span class="badge-status badge-present"><i class="bi bi-circle-fill" style="font-size:8px;"></i> Active</span>`
+                : `<span class="badge-status badge-exit-confirmed">Completed</span>`;
+
+            tr.innerHTML = `
+                <td><strong>${j.journey_code}</strong></td>
+                <td>${j.bus_number || 'Bus #' + j.bus_id}</td>
+                <td>${j.origin} &rarr; ${j.destination}</td>
+                <td>${statusBadge}</td>
+                <td>${j.start_time || '-'}</td>
+                <td><span class="badge-status badge-present">${j.passenger_count}</span></td>
+                <td><span class="badge-status badge-present">${j.uploads_count}</span></td>
+                <td>
+                    <div style="display:flex;gap:6px;">
+                        <a href="/upload" class="btn-secondary" style="padding:4px 8px;font-size:12px;" title="Upload photo for this journey">
+                            <i class="bi bi-camera"></i>
+                        </a>
+                        <a href="/monitoring?journey_id=${j.id}" class="btn-secondary" style="padding:4px 8px;font-size:12px;" title="View passengers">
+                            <i class="bi bi-people"></i>
+                        </a>
+                        ${j.status === 'active' ? `
+                            <button onclick="endJourney(${j.id})" class="btn-secondary" style="padding:4px 8px;font-size:12px;color:var(--status-exit-unconfirmed-text);" title="End Journey">
+                                <i class="bi bi-stop-circle"></i>
+                            </button>
+                        ` : ''}
+                        <button onclick="deleteJourney(${j.id}, '${j.journey_code}')" class="btn-secondary" style="padding:4px 8px;font-size:12px;color:#ef4444;" title="Delete this journey data">
+                            <i class="bi bi-trash3 text-danger"></i>
+                        </button>
+                    </div>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+function openNewJourneyModal() {
+    document.getElementById("new-journey-modal").classList.add("active");
+}
+
+function closeNewJourneyModal() {
+    document.getElementById("new-journey-modal").classList.remove("active");
+}
+
+async function handleCreateJourney(e) {
+    e.preventDefault();
+    const busNumber = document.getElementById("bus-number").value.trim();
+    const origin = document.getElementById("journey-origin").value.trim();
+    const destination = document.getElementById("journey-dest").value.trim();
+
+    try {
+        const res = await fetch("/api/journeys", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ bus_number: busNumber, origin, destination })
+        });
+        if (res.ok) {
+            showToast("Journey started successfully!", "success");
+            closeNewJourneyModal();
+            loadJourneysTable();
+        } else {
+            const err = await res.json();
+            showToast(err.error || "Failed to create journey", "error");
+        }
+    } catch (err) {
+        showToast("Error creating journey", "error");
+    }
+}
+
+async function endJourney(journeyId) {
+    if (!confirm("Are you sure you want to mark this journey as completed?")) return;
+    try {
+        const res = await fetch(`/api/journeys/${journeyId}/end`, { method: "POST" });
+        if (res.ok) {
+            showToast("Journey marked as completed.", "success");
+            loadJourneysTable();
+        }
+    } catch (e) {
+        showToast("Error ending journey", "error");
+    }
+}
+
+async function deleteJourney(journeyId, journeyCode) {
+    if (!confirm(`Are you sure you want to permanently delete Journey ${journeyCode} and all its uploaded photos, face crops, and passenger history? This cannot be undone.`)) {
+        return;
+    }
+
+    try {
+        const res = await fetch(`/api/journeys/${journeyId}`, { method: "DELETE" });
+        const data = await res.json();
+        if (res.ok) {
+            showToast(data.message || `Journey ${journeyCode} deleted.`, "success");
+            loadJourneysTable();
+            // If cleanup modal is open, refresh analysis
+            if (document.getElementById("history-cleanup-modal").style.display === "block") {
+                loadHistoryStorageAnalysis();
+            }
+        } else {
+            showToast(data.error || "Failed to delete journey.", "error");
+        }
+    } catch (err) {
+        showToast("Error deleting journey.", "error");
+    }
+}
+
+// History Analysis & Cleanup Modal Handlers
+async function openClearHistoryModal() {
+    const modal = document.getElementById("history-cleanup-modal");
+    if (!modal) return;
+    modal.classList.add("active");
+    modal.style.display = "flex";
+    modal.style.opacity = "1";
+    modal.style.visibility = "visible";
+    loadHistoryStorageAnalysis();
+}
+
+function closeClearHistoryModal() {
+    const modal = document.getElementById("history-cleanup-modal");
+    if (modal) {
+        modal.classList.remove("active");
+        modal.style.display = "none";
+        modal.style.opacity = "0";
+        modal.style.visibility = "hidden";
+    }
+}
+
+async function loadHistoryStorageAnalysis() {
+    try {
+        const res = await fetch("/api/settings/data-analysis");
+        if (!res.ok) return;
+        const data = await res.json();
+
+        const s = data.storage;
+        document.getElementById("h-storage-uploads-mb").textContent = `${s.uploads_dir_mb} MB`;
+        document.getElementById("h-storage-uploads-cnt").textContent = `${s.uploads_file_count} photos`;
+        document.getElementById("h-storage-crops-mb").textContent = `${s.crops_dir_mb} MB`;
+        document.getElementById("h-storage-crops-cnt").textContent = `${s.crops_file_count} crops`;
+        document.getElementById("h-storage-db-mb").textContent = `${s.database_file_mb} MB`;
+        document.getElementById("h-storage-total-mb").textContent = `${s.total_storage_mb} MB`;
+
+        const tbody = document.getElementById("h-breakdown-tbody");
+        tbody.innerHTML = "";
+        if (!data.journeys || data.journeys.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="7" class="text-center py-3" style="color:var(--text-muted)">No journeys recorded in database.</td></tr>`;
+            return;
+        }
+
+        data.journeys.forEach(j => {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+                <td><strong>${j.journey_code}</strong></td>
+                <td>${j.bus_number}</td>
+                <td>${j.route}</td>
+                <td><span class="badge-status ${j.status === 'completed' ? 'badge-exit-confirmed' : 'badge-present'}">${j.status}</span></td>
+                <td>${j.uploads_count}</td>
+                <td>${j.passengers_count}</td>
+                <td>
+                    <button class="btn-secondary" style="padding:3px 8px;font-size:11px;color:#ef4444;" onclick="deleteJourney(${j.id}, '${j.journey_code}')">
+                        <i class="bi bi-trash3 text-danger"></i> Delete
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    } catch (e) {
+        console.error("Storage analysis load error:", e);
+    }
+}
+
+async function executeHistoryCleanup() {
+    const select = document.getElementById("h-cleanup-select");
+    const cleanupType = select.value;
+    const selectedOpt = select.options[select.selectedIndex];
+    const days = selectedOpt.dataset.days ? parseInt(selectedOpt.dataset.days) : 30;
+    const deleteFiles = document.getElementById("h-delete-files").checked;
+    const deleteAudits = document.getElementById("h-delete-audits").checked;
+
+    if (!confirm("Are you sure you want to permanently delete the selected historical journey and photo data? This will reclaim physical disk space.")) {
+        return;
+    }
+
+    const btn = document.getElementById("btn-run-h-cleanup");
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner-border spinner-border-sm"></span> Purging...`;
+
+    try {
+        const res = await fetch("/api/settings/data-cleanup", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                cleanup_type: cleanupType,
+                days: days,
+                delete_disk_files: deleteFiles,
+                delete_audit_logs: deleteAudits
+            })
+        });
+
+        const data = await res.json();
+        const alertBox = document.getElementById("history-cleanup-alert");
+        alertBox.style.display = "block";
+
+        if (res.ok) {
+            alertBox.style.background = "#dcfce7";
+            alertBox.style.color = "#15803d";
+            alertBox.innerHTML = `<strong><i class="bi bi-check-circle-fill"></i> Cleanup Succeeded:</strong> ${data.message}`;
+            showToast(data.message, "success");
+            loadHistoryStorageAnalysis();
+            loadJourneysTable();
+        } else {
+            alertBox.style.background = "#fee2e2";
+            alertBox.style.color = "#b91c1c";
+            alertBox.textContent = data.error || "Failed to execute cleanup.";
+        }
+    } catch (e) {
+        showToast("Error executing data cleanup", "error");
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = `<i class="bi bi-trash3"></i> Delete History`;
+    }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,554 @@
+{% extends "base.html" %}
+
+{% block page_title %}Admin Bus Monitoring Dashboard{% endblock %}
+
+{% block content %}
+<!-- Admin Dashboard Header & Filter Bar -->
+<div class="card" style="padding:16px 22px;margin-bottom:20px;display:flex;flex-direction:row;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px;">
+    <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+        <div style="display:flex;align-items:center;gap:10px;">
+            <div class="brand-icon" style="width:36px;height:36px;font-size:18px;">
+                <i class="bi bi-shield-check"></i>
+            </div>
+            <div>
+                <h3 style="font-size:16px;font-weight:700;margin:0;">Fleet Operations & Passenger Monitoring</h3>
+                <span style="font-size:12px;color:var(--text-muted);" id="live-clock">Live Monitoring Active</span>
+            </div>
+        </div>
+
+        <!-- Prominent Bus Selector Dropdown -->
+        <div style="display:flex;align-items:center;gap:8px;margin-left:12px;">
+            <label for="admin-bus-select" style="font-size:13px;font-weight:600;color:var(--text-main);white-space:nowrap;">
+                <i class="bi bi-funnel-fill text-primary"></i> Select Bus:
+            </label>
+            <select id="admin-bus-select" class="form-select" style="min-width:280px;font-weight:500;" onchange="onAdminBusSelectionChange()">
+                <option value="all">Loading buses...</option>
+            </select>
+        </div>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:12px;">
+        <span id="bus-filter-badge" class="badge-status badge-present">All Buses Active</span>
+        <button class="btn-secondary" onclick="openDataCleanupModal()" title="Analyze storage and clean historical data">
+            <i class="bi bi-trash3 text-danger"></i> Data Cleanup
+        </button>
+        <button class="btn-secondary" onclick="loadAdminDashboardData()" title="Refresh Dashboard">
+            <i class="bi bi-arrow-clockwise"></i> Refresh
+        </button>
+    </div>
+</div>
+
+<!-- 8 Summary Cards Grid -->
+<div class="metrics-grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));gap:16px;margin-bottom:22px;">
+    <!-- Card 1: Total Registered Buses -->
+    <div class="metric-card" onclick="scrollToSection('active-buses-section')" style="cursor:pointer;" title="Total buses registered in fleet">
+        <div class="metric-icon" style="background:#eff6ff;color:#2563eb;">
+            <i class="bi bi-bus-front-fill"></i>
+        </div>
+        <div>
+            <div class="metric-value" id="card-total-buses">0</div>
+            <div class="metric-label">Registered Buses</div>
+        </div>
+    </div>
+
+    <!-- Card 2: Active Buses -->
+    <div class="metric-card" onclick="scrollToSection('active-buses-section')" style="cursor:pointer;" title="Operational buses with active journey or recent activity">
+        <div class="metric-icon" style="background:#dcfce7;color:#16a34a;">
+            <i class="bi bi-broadcast-pin"></i>
+        </div>
+        <div>
+            <div class="metric-value" id="card-active-buses">0</div>
+            <div class="metric-label">Active Buses</div>
+        </div>
+    </div>
+
+    <!-- Card 3: Buses With Recent GPS -->
+    <div class="metric-card" onclick="scrollToSection('map-card-section')" style="cursor:pointer;" title="Buses reporting valid location within 10 minutes">
+        <div class="metric-icon" style="background:#e0f2fe;color:#0284c7;">
+            <i class="bi bi-geo-alt-fill"></i>
+        </div>
+        <div>
+            <div class="metric-value" id="card-recent-gps">0</div>
+            <div class="metric-label">Recent GPS</div>
+        </div>
+    </div>
+
+    <!-- Card 4: Total Passengers Identified -->
+    <div class="metric-card" onclick="scrollToSection('passengers-section')" style="cursor:pointer;" title="Unique persistent passengers in current scope">
+        <div class="metric-icon" style="background:#f3e8ff;color:#9333ea;">
+            <i class="bi bi-people-fill"></i>
+        </div>
+        <div>
+            <div class="metric-value" id="card-total-passengers">0</div>
+            <div class="metric-label">Total Passengers</div>
+        </div>
+    </div>
+
+    <!-- Card 5: Currently Confirmed Present -->
+    <div class="metric-card" onclick="scrollToSection('passengers-section')" style="cursor:pointer;" title="Passengers verified present by camera observations">
+        <div class="metric-icon" style="background:#dcfce7;color:#15803d;">
+            <i class="bi bi-person-check-fill"></i>
+        </div>
+        <div>
+            <div class="metric-value" id="card-confirmed-present">0</div>
+            <div class="metric-label">Confirmed Present</div>
+        </div>
+    </div>
+
+    <!-- Card 6: Total Confirmed Boardings -->
+    <div class="metric-card" onclick="scrollToSection('passengers-section')" style="cursor:pointer;" title="Explicitly confirmed boarding events">
+        <div class="metric-icon" style="background:#fef3c7;color:#b45309;">
+            <i class="bi bi-box-arrow-in-right"></i>
+        </div>
+        <div>
+            <div class="metric-value" id="card-confirmed-boardings">0</div>
+            <div class="metric-label">Confirmed Boardings</div>
+        </div>
+    </div>
+
+    <!-- Card 7: Total Confirmed Exits -->
+    <div class="metric-card" onclick="scrollToSection('passengers-section')" style="cursor:pointer;" title="Explicitly confirmed passenger exits">
+        <div class="metric-icon" style="background:#f1f5f9;color:#475569;">
+            <i class="bi bi-door-open-fill"></i>
+        </div>
+        <div>
+            <div class="metric-value" id="card-confirmed-exits">0</div>
+            <div class="metric-label">Confirmed Exits</div>
+        </div>
+    </div>
+
+    <!-- Card 8: Needs Verification -->
+    <div class="metric-card" onclick="scrollToSection('passengers-section')" style="cursor:pointer;" title="Passengers needing review, unconfirmed exit or possibly absent">
+        <div class="metric-icon" style="background:#fee2e2;color:#dc2626;">
+            <i class="bi bi-exclamation-octagon-fill"></i>
+        </div>
+        <div>
+            <div class="metric-value" id="card-needs-verification">0</div>
+            <div class="metric-label">Needs Verification</div>
+        </div>
+    </div>
+</div>
+
+<!-- Live Bus Location Map Card -->
+<div class="card" id="map-card-section" style="margin-bottom:22px;padding:16px;">
+    <div class="card-title">
+        <div style="display:flex;align-items:center;gap:8px;">
+            <i class="bi bi-map-fill text-primary"></i>
+            <span>Live Bus Location Map</span>
+            <span id="map-scope-badge" class="badge-status badge-present" style="font-size:11px;">All Buses</span>
+        </div>
+        <div style="font-size:12px;color:var(--text-muted);font-weight:normal;">
+            <i class="bi bi-info-circle"></i> Map displays device-reported locations. Marker freshness reflects recent updates.
+        </div>
+    </div>
+
+    <div style="position:relative;width:100%;">
+        <div id="admin-map" style="height:420px;border-radius:var(--radius-sm);border:1px solid var(--border-color);z-index:10;"></div>
+        
+        <!-- Empty state notice when no coordinates are available -->
+        <div id="admin-map-empty-state" style="display:none;position:absolute;top:50%;left:50%;transform:translate(-50%, -50%);background:var(--bg-card);padding:20px 28px;border-radius:var(--radius-md);box-shadow:var(--shadow-lg);border:1px solid var(--border-color);text-align:center;z-index:20;">
+            <i class="bi bi-geo-alt-fill text-muted" style="font-size:32px;"></i>
+            <h4 style="font-size:15px;margin:8px 0 4px 0;">No Valid GPS Location Available</h4>
+            <p style="font-size:12px;color:var(--text-muted);margin:0;" id="admin-map-empty-text">No location updates have been reported for this bus yet.</p>
+        </div>
+    </div>
+</div>
+
+<!-- Selected Bus Details Panel (Displayed when a specific bus is selected) -->
+<div class="card" id="selected-bus-panel" style="display:none;margin-bottom:22px;border-left:4px solid var(--accent-primary);">
+    <div class="card-title">
+        <div style="display:flex;align-items:center;gap:10px;">
+            <i class="bi bi-bus-front text-primary"></i>
+            <span id="panel-bus-title">Selected Bus Details</span>
+            <span id="panel-bus-status-badge" class="badge-status badge-present">Active</span>
+            <span id="panel-bus-freshness-badge" class="badge-status badge-present">Live</span>
+        </div>
+        <div>
+            <button class="btn-secondary" style="font-size:12px;padding:4px 10px;" onclick="resetToAllBuses()">
+                <i class="bi bi-x-circle"></i> View All Buses
+            </button>
+        </div>
+    </div>
+
+    <!-- Bus Overview Grid -->
+    <div style="display:grid;grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));gap:16px;background:var(--bg-card-hover);padding:16px;border-radius:var(--radius-sm);border:1px solid var(--border-color);margin-bottom:18px;">
+        <div>
+            <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Bus Registration</div>
+            <div style="font-size:15px;font-weight:700;color:var(--text-main);" id="panel-reg-num">-</div>
+            <div style="font-size:12px;color:var(--text-muted);" id="panel-bus-type">-</div>
+        </div>
+        <div>
+            <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Route Details</div>
+            <div style="font-size:14px;font-weight:600;color:var(--text-main);" id="panel-route">-</div>
+            <div style="font-size:12px;color:var(--text-muted);" id="panel-terminals">-</div>
+        </div>
+        <div>
+            <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Assigned Operator</div>
+            <div style="font-size:14px;font-weight:600;color:var(--text-main);" id="panel-operator">-</div>
+            <div style="font-size:12px;color:var(--text-muted);" id="panel-operator-contact">-</div>
+        </div>
+        <div>
+            <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Current Journey</div>
+            <div style="font-size:14px;font-weight:600;color:var(--text-main);" id="panel-journey-code">None</div>
+            <div style="font-size:12px;color:var(--text-muted);" id="panel-journey-time">-</div>
+        </div>
+        <div>
+            <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Latest GPS Location</div>
+            <div style="font-size:13px;font-weight:600;color:var(--text-main);" id="panel-gps-coords">-</div>
+            <div style="font-size:11px;color:var(--text-muted);" id="panel-gps-updated">-</div>
+        </div>
+    </div>
+
+    <!-- 3D Bus Cabin & Interior Seat Occupancy View -->
+    <div style="background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--radius-sm);padding:18px;margin-bottom:20px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:14px;">
+            <div>
+                <h4 style="font-size:15px;font-weight:700;margin:0 0 4px 0;color:var(--text-main);display:flex;align-items:center;gap:8px;">
+                    <i class="bi bi-badge-3d text-primary" style="font-size:18px;"></i>
+                    <span>3D Bus Interior & Seat Occupancy View</span>
+                    <span class="badge-status badge-present" style="font-size:11px;">Real-Time</span>
+                </h4>
+                <div style="font-size:12px;color:var(--text-muted);">
+                    Visual 3D passenger cabin. Green: Confirmed Present, Yellow: Possibly Absent, Orange: Exit Unconfirmed. Click any seat to inspect or reassign.
+                </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;">
+                <span id="cabin-occupancy-pill" class="badge-status badge-present" style="font-size:12px;padding:6px 12px;">0 / 40 Seats Occupied</span>
+                <div class="btn-group" style="display:flex;gap:4px;">
+                    <button class="btn-secondary" style="font-size:12px;padding:4px 10px;" id="btn-toggle-view" onclick="toggleCabin3DView()">
+                        <i class="bi bi-layers"></i> 2D Top View
+                    </button>
+                    <button class="btn-secondary" style="font-size:12px;padding:4px 8px;" onclick="rotateCabin(-15)" title="Rotate Left">
+                        <i class="bi bi-arrow-counterclockwise"></i>
+                    </button>
+                    <button class="btn-secondary" style="font-size:12px;padding:4px 8px;" onclick="rotateCabin(15)" title="Rotate Right">
+                        <i class="bi bi-arrow-clockwise"></i>
+                    </button>
+                    <button class="btn-secondary" style="font-size:12px;padding:4px 8px;" onclick="resetCabinView()" title="Reset Perspective">
+                        <i class="bi bi-arrow-repeat"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3D Viewport -->
+        <div class="bus-3d-viewport" id="bus-cabin-viewport">
+            <div class="bus-3d-stage" id="bus-cabin-stage" style="transform: rotateX(50deg) rotateZ(-20deg);">
+                <div class="bus-chassis">
+                    <!-- Left & Right Window Rails -->
+                    <div class="bus-window-rail-left"></div>
+                    <div class="bus-window-rail-right"></div>
+
+                    <!-- Overhead Yellow Safety Grab Rail along the Central Aisle -->
+                    <div class="bus-overhead-rail">
+                        <div class="bus-grab-strap"></div>
+                        <div class="bus-grab-strap"></div>
+                        <div class="bus-grab-strap"></div>
+                        <div class="bus-grab-strap"></div>
+                    </div>
+
+                    <!-- Cockpit & CCTV Camera View Area -->
+                    <div class="bus-cockpit">
+                        <div class="bus-windshield"></div>
+                        <div class="bus-driver-seat" title="Bus Operator / Driver Seat">
+                            <i class="bi bi-person-badge" style="font-size:16px;"></i>
+                            <span>DRIVER</span>
+                        </div>
+                        <div class="bus-camera-hud" title="Live CCTV Interior Camera Feed">
+                            <i class="bi bi-camera-video-fill"></i>
+                            <span>IPCAM • 24 SEATS</span>
+                        </div>
+                        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
+                            <div class="bus-door-indicator">
+                                <i class="bi bi-arrow-right-short"></i> FRONT DOOR
+                            </div>
+                            <span style="font-size:10px;color:var(--text-muted);font-weight:600;" id="cabin-bus-tag">BUS CABIN</span>
+                        </div>
+                    </div>
+
+                    <!-- 6 Visible Rows of Seats (A, B | AISLE | C, D = 24 Seats) -->
+                    <div class="bus-seating-grid" id="cabin-seating-grid">
+                        <!-- Dynamically populated rows 1 to 6 with 3D avatars -->
+                    </div>
+
+                    <div class="bus-rear-bench" id="cabin-rear-bench" style="display:none;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Selected Bus Passenger Table -->
+    <div id="passengers-section">
+        <h4 style="font-size:14px;font-weight:600;margin-bottom:12px;color:var(--text-main);">
+            <i class="bi bi-people-fill text-primary"></i> Passengers on This Bus / Journey:
+        </h4>
+        <div class="table-responsive">
+            <table class="custom-table">
+                <thead>
+                    <tr>
+                        <th>Seat</th>
+                        <th>Person ID</th>
+                        <th>First Seen (Est. Boarding)</th>
+                        <th>Last Confirmed Presence</th>
+                        <th>Current Status</th>
+                        <th>Boarding Status</th>
+                        <th>Exit Status</th>
+                        <th>Confidence</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody id="panel-passengers-tbody">
+                    <tr><td colspan="9" class="text-center py-4" style="color:var(--text-muted)">Loading passenger tracking data...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Active Buses & Journeys Section -->
+<div class="card" id="active-buses-section" style="margin-bottom:22px;">
+    <div class="card-title">
+        <div style="display:flex;align-items:center;gap:8px;">
+            <i class="bi bi-activity text-primary"></i>
+            <span>Active Buses & Operational Status</span>
+        </div>
+        <span style="font-size:12px;color:var(--text-muted);font-weight:normal;">Real-time operational status derived from journey & activity freshness</span>
+    </div>
+
+    <div class="table-responsive">
+        <table class="custom-table">
+            <thead>
+                <tr>
+                    <th>Registration #</th>
+                    <th>Bus Name / Route</th>
+                    <th>Operator</th>
+                    <th>Journey ID</th>
+                    <th>Latest GPS Update</th>
+                    <th>Location Status</th>
+                    <th>Present</th>
+                    <th>Possibly Absent</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody id="active-buses-tbody">
+                <tr><td colspan="9" class="text-center py-4" style="color:var(--text-muted)">Loading bus operational records...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Recent Activity Feed (Photo uploads, observations, boardings, exits, GPS updates) -->
+<div class="card" style="margin-bottom:0;">
+    <div class="card-title">
+        <div style="display:flex;align-items:center;gap:8px;">
+            <i class="bi bi-clock-history text-primary"></i>
+            <span>Recent Operational Activity</span>
+        </div>
+        <span style="font-size:12px;color:var(--text-muted);font-weight:normal;">Tamper-evident audit of uploads, detections, and state transitions</span>
+    </div>
+
+    <div class="table-responsive">
+        <table class="custom-table">
+            <thead>
+                <tr>
+                    <th>Timestamp</th>
+                    <th>Event / Activity</th>
+                    <th>Bus / Context</th>
+                    <th>Details</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody id="recent-activity-tbody">
+                <tr><td colspan="5" class="text-center py-4" style="color:var(--text-muted)">Loading activity feed...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Passenger Observation Detail Modal -->
+<div class="modal-overlay" id="passenger-modal">
+    <div class="modal-box" style="max-width:760px;">
+        <div class="modal-header">
+            <div>
+                <h3 class="modal-title" id="modal-passenger-id">Passenger Timeline</h3>
+                <span class="badge-status badge-present" id="modal-status-badge">PRESENT</span>
+            </div>
+            <button class="modal-close-btn" onclick="closePassengerModal()">&times;</button>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;background:var(--bg-card-hover);padding:14px;border-radius:var(--radius-sm);border:1px solid var(--border-color);margin-bottom:20px;">
+            <div>
+                <div style="font-size:11px;text-transform:uppercase;color:var(--text-muted);font-weight:600;">Provisional Boarding:</div>
+                <div id="modal-first-seen" style="font-size:13px;font-weight:600;margin-top:2px;">-</div>
+                <div id="modal-first-gps" style="font-size:12px;color:var(--text-muted);">-</div>
+            </div>
+            <div>
+                <div style="font-size:11px;text-transform:uppercase;color:var(--text-muted);font-weight:600;">Last Confirmed Presence:</div>
+                <div id="modal-last-seen" style="font-size:13px;font-weight:600;margin-top:2px;">-</div>
+                <div id="modal-last-gps" style="font-size:12px;color:var(--text-muted);">-</div>
+            </div>
+        </div>
+
+        <div style="margin-bottom:20px;">
+            <h4 style="font-size:14px;font-weight:600;margin-bottom:10px;">Observation Face Crops:</h4>
+            <div id="modal-observations-list" style="overflow-x:auto;white-space:nowrap;padding:4px 0;"></div>
+        </div>
+
+        <div style="margin-bottom:24px;">
+            <h4 style="font-size:14px;font-weight:600;margin-bottom:10px;">Observation & Presence Timeline:</h4>
+            <div class="timeline" id="modal-timeline-list"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Seat Detail & Reassign Modal -->
+<div class="modal-overlay" id="seat-detail-modal" style="display:none;">
+    <div class="modal-box" style="max-width:480px;">
+        <div class="modal-header">
+            <div>
+                <h3 class="modal-title" id="seat-modal-title">Seat Inspection</h3>
+                <span class="badge-status badge-present" id="seat-modal-status">OCCUPIED</span>
+            </div>
+            <button class="modal-close-btn" onclick="closeSeatModal()">&times;</button>
+        </div>
+        <div class="modal-body" style="padding:16px 20px;">
+            <div style="display:flex;align-items:center;gap:16px;margin-bottom:16px;background:var(--bg-card-hover);padding:14px;border-radius:var(--radius-sm);border:1px solid var(--border-color);">
+                <img id="seat-modal-crop" src="" alt="Passenger Crop" style="width:64px;height:64px;border-radius:50%;object-fit:cover;border:2px solid var(--accent-primary);display:none;">
+                <div id="seat-modal-vacant-icon" style="width:64px;height:64px;border-radius:50%;background:var(--bg-card);display:flex;align-items:center;justify-content:center;font-size:28px;color:var(--text-muted);border:1.5px dashed var(--border-color);">
+                    <i class="bi bi-person-x"></i>
+                </div>
+                <div>
+                    <div style="font-size:18px;font-weight:800;color:var(--text-main);" id="seat-modal-pid">Seat Vacant</div>
+                    <div style="font-size:12px;color:var(--text-muted);" id="seat-modal-info">No passenger currently seated here</div>
+                </div>
+            </div>
+
+            <!-- Seat change / Reassignment controls -->
+            <div id="seat-reassign-container" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border-color);">
+                <label class="form-label" style="font-weight:600;font-size:12px;">Change / Move to Another Seat:</label>
+                <div style="display:flex;gap:8px;">
+                    <select id="seat-reassign-select" class="form-select" style="flex:1;">
+                        <!-- populated with vacant seats -->
+                    </select>
+                    <button class="btn-primary" onclick="reassignPassengerSeat()" style="padding:6px 14px;font-size:12px;">
+                        <i class="bi bi-arrow-left-right"></i> Move Seat
+                    </button>
+                </div>
+            </div>
+
+            <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:18px;">
+                <button class="btn-secondary" onclick="closeSeatModal()">Close</button>
+                <button class="btn-primary" id="seat-view-timeline-btn" onclick="openPassengerTimelineFromSeat()" style="display:none;">
+                    <i class="bi bi-clock-history"></i> Full Timeline
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Storage Analysis & Historical Data Cleanup Modal -->
+<div class="modal-overlay" id="data-cleanup-modal" onclick="if(event.target === this) closeDataCleanupModal()">
+    <div class="modal-box" style="max-width:760px;max-height:90vh;overflow-y:auto;">
+        <div class="modal-header">
+            <div>
+                <h3 class="modal-title"><i class="bi bi-database-check text-primary"></i> Storage Analysis & Historical Data Cleanup</h3>
+                <p style="font-size:12px;color:var(--text-muted);margin:2px 0 0 0;">Inspect disk consumption, analyze historical transit records, and purge old data</p>
+            </div>
+            <button class="modal-close-btn" onclick="closeDataCleanupModal()">&times;</button>
+        </div>
+        <div class="modal-body" style="padding:20px;">
+            <div id="cleanup-alert" style="display:none;margin-bottom:14px;padding:10px 14px;border-radius:6px;font-size:13px;"></div>
+
+            <!-- Storage Metrics Cards -->
+            <div style="display:grid;grid-template-columns: repeat(4, 1fr);gap:12px;margin-bottom:20px;">
+                <div style="background:var(--bg-card-hover);padding:12px;border-radius:var(--radius-sm);border:1px solid var(--border-color);text-align:center;">
+                    <div style="font-size:11px;color:var(--text-muted);font-weight:600;">Photo Uploads</div>
+                    <div style="font-size:18px;font-weight:800;color:var(--text-main);" id="storage-uploads-mb">0 MB</div>
+                    <div style="font-size:10px;color:var(--text-muted);" id="storage-uploads-cnt">0 photos</div>
+                </div>
+                <div style="background:var(--bg-card-hover);padding:12px;border-radius:var(--radius-sm);border:1px solid var(--border-color);text-align:center;">
+                    <div style="font-size:11px;color:var(--text-muted);font-weight:600;">Face Crops</div>
+                    <div style="font-size:18px;font-weight:800;color:var(--text-main);" id="storage-crops-mb">0 MB</div>
+                    <div style="font-size:10px;color:var(--text-muted);" id="storage-crops-cnt">0 crops</div>
+                </div>
+                <div style="background:var(--bg-card-hover);padding:12px;border-radius:var(--radius-sm);border:1px solid var(--border-color);text-align:center;">
+                    <div style="font-size:11px;color:var(--text-muted);font-weight:600;">SQLite Database</div>
+                    <div style="font-size:18px;font-weight:800;color:var(--text-main);" id="storage-db-mb">0 MB</div>
+                    <div style="font-size:10px;color:var(--text-muted);">Indexed storage</div>
+                </div>
+                <div style="background:var(--accent-primary-light);padding:12px;border-radius:var(--radius-sm);border:1px solid var(--accent-primary);text-align:center;">
+                    <div style="font-size:11px;color:var(--accent-primary);font-weight:700;">Total Storage Used</div>
+                    <div style="font-size:18px;font-weight:800;color:var(--accent-primary);" id="storage-total-mb">0 MB</div>
+                    <div style="font-size:10px;color:var(--text-muted);">Reclaimable space</div>
+                </div>
+            </div>
+
+            <!-- Purge Filter Controls -->
+            <div style="background:var(--bg-card-hover);padding:16px;border-radius:var(--radius-sm);border:1px solid var(--border-color);margin-bottom:20px;">
+                <h4 style="font-size:14px;font-weight:700;margin:0 0 10px 0;color:var(--text-main);">
+                    <i class="bi bi-trash3 text-danger"></i> Bulk Cleanup Options
+                </h4>
+                <div style="display:grid;grid-template-columns: 2fr 1fr auto;gap:12px;align-items:center;">
+                    <div>
+                        <label class="form-label" style="font-size:12px;font-weight:600;">Select Cleanup Criteria:</label>
+                        <select id="cleanup-type-select" class="form-select" onchange="onCleanupCriteriaChange()">
+                            <option value="all_completed">All Completed Journeys & Photos (Any age)</option>
+                            <option value="all_data">All Journeys & Photo History (Full Reset / Clean Slate)</option>
+                            <option value="older_than_days" data-days="7">Completed journeys older than 7 days</option>
+                            <option value="older_than_days" data-days="15">Completed journeys older than 15 days</option>
+                            <option value="older_than_days" data-days="30">Completed journeys older than 30 days</option>
+                        </select>
+                    </div>
+                    <div style="display:flex;flex-direction:column;gap:6px;padding-top:16px;">
+                        <label style="font-size:12px;display:flex;align-items:center;gap:6px;cursor:pointer;">
+                            <input type="checkbox" id="cleanup-delete-files" checked> Delete physical photos on disk
+                        </label>
+                        <label style="font-size:12px;display:flex;align-items:center;gap:6px;cursor:pointer;">
+                            <input type="checkbox" id="cleanup-delete-audits"> Also prune historical audit logs
+                        </label>
+                    </div>
+                    <div style="padding-top:12px;">
+                        <button class="btn-primary" style="background:#dc2626;border-color:#dc2626;" onclick="executeDataCleanup()" id="btn-run-cleanup">
+                            <i class="bi bi-trash3"></i> Purge Old Data
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Historical Journeys Breakdown Table -->
+            <div>
+                <h4 style="font-size:14px;font-weight:700;margin:0 0 10px 0;color:var(--text-main);">
+                    Historical Journeys Breakdown
+                </h4>
+                <div class="table-responsive" style="max-height:240px;overflow-y:auto;border:1px solid var(--border-color);border-radius:var(--radius-sm);">
+                    <table class="custom-table" style="font-size:12px;">
+                        <thead>
+                            <tr>
+                                <th>Journey Code</th>
+                                <th>Bus</th>
+                                <th>Route</th>
+                                <th>Status</th>
+                                <th>Photos</th>
+                                <th>Passengers</th>
+                                <th>Disk Size</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="cleanup-journeys-tbody">
+                            <tr><td colspan="8" class="text-center py-3" style="color:var(--text-muted);">Loading historical records...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div style="display:flex;justify-content:flex-end;margin-top:20px;">
+                <button class="btn-secondary" onclick="closeDataCleanupModal()">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/admin_dashboard.js') }}?v=3.1"></script>
+{% endblock %}

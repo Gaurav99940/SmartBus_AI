@@ -1,0 +1,411 @@
+{% extends "base.html" %}
+
+{% block page_title %}System Settings & Audit Log{% endblock %}
+
+{% block content %}
+<div style="display:grid;grid-template-columns: 1fr 1fr;gap:24px;margin-bottom:24px;">
+    <!-- AI Thresholds Configuration -->
+    <div class="card" style="margin-bottom:0;">
+        <div class="card-title">
+            <span><i class="bi bi-sliders text-primary"></i> AI Recognition & Matching Thresholds</span>
+        </div>
+        <form id="thresholds-form" onsubmit="saveThresholds(event)">
+            <div class="form-group">
+                <label class="form-label" for="thresh-high">
+                    High Confidence Similarity Threshold (Cosine)
+                    <span id="thresh-high-val" style="float:right;font-weight:600;color:var(--accent-primary);">0.72</span>
+                </label>
+                <input type="range" class="form-control" id="thresh-high" min="0.60" max="0.95" step="0.01" value="0.72" oninput="document.getElementById('thresh-high-val').textContent=this.value">
+                <small style="color:var(--text-muted);font-size:11px;">Matches above this threshold are classified as High confidence.</small>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="thresh-med">
+                    Medium Confidence Similarity Threshold (Cosine)
+                    <span id="thresh-med-val" style="float:right;font-weight:600;color:var(--accent-primary);">0.58</span>
+                </label>
+                <input type="range" class="form-control" id="thresh-med" min="0.45" max="0.75" step="0.01" value="0.58" oninput="document.getElementById('thresh-med-val').textContent=this.value">
+                <small style="color:var(--text-muted);font-size:11px;">Matches between this and High are classified as Medium.</small>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="thresh-low">
+                    Minimum Match Threshold (Below = New Passenger ID)
+                    <span id="thresh-low-val" style="float:right;font-weight:600;color:var(--accent-primary);">0.45</span>
+                </label>
+                <input type="range" class="form-control" id="thresh-low" min="0.30" max="0.60" step="0.01" value="0.45" oninput="document.getElementById('thresh-low-val').textContent=this.value">
+                <small style="color:var(--text-muted);font-size:11px;">Detections below this create a new journey-scoped Person ID (P001, P002...).</small>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="thresh-missed">
+                    Consecutive Missed Photos Before Exit Unconfirmed Flag
+                </label>
+                <input type="number" class="form-control" id="thresh-missed" min="1" max="10" value="3">
+                <small style="color:var(--text-muted);font-size:11px;">Passengers missed for fewer photos are labeled 'Possibly Absent' (occluded/turned).</small>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="thresh-blur">
+                    Blur Sensitivity (Laplacian Variance Threshold)
+                </label>
+                <input type="number" class="form-control" id="thresh-blur" min="10" max="200" value="50">
+                <small style="color:var(--text-muted);font-size:11px;">Faces with variance below this are flagged as blurry.</small>
+            </div>
+
+            <button type="submit" class="btn-primary" style="margin-top:12px;">
+                <i class="bi bi-save"></i> Save Threshold Configuration
+            </button>
+        </form>
+    </div>
+
+    <!-- Data Integrity & Data Retention -->
+    <div class="card" style="margin-bottom:0;display:flex;flex-direction:column;justify-content:space-between;">
+        <div>
+            <div class="card-title">
+                <span><i class="bi bi-shield-check text-primary"></i> Data Integrity Policy</span>
+            </div>
+            <p style="font-size:13px;color:var(--text-main);line-height:1.5;">
+                This system operates under strict production rules:
+            </p>
+            <ul style="font-size:13px;color:var(--text-muted);margin:10px 0 16px 20px;line-height:1.5;">
+                <li><strong>No Demo Data:</strong> Synthetic or placeholder records are strictly prohibited.</li>
+                <li><strong>Genuine Inferences Only:</strong> All passenger counts and identities derive exclusively from verified camera clips and genuine AI models.</li>
+                <li><strong>Real Stops & Timetables:</strong> Route milestones match authenticated timetable timestamps and coordinates.</li>
+                <li><strong>Clean Empty States:</strong> When no genuine data is present, the system accurately displays empty states rather than simulated placeholders.</li>
+            </ul>
+        </div>
+
+        <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-top:20px;">
+            <h4 style="font-size:14px;font-weight:600;margin-bottom:6px;">Data Privacy & Retention</h4>
+            <p style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">
+                Automatic retention policy: Passenger observations and biometric vectors are scheduled for automated cleanup after 30 days.
+            </p>
+            <span class="badge-status badge-present"><i class="bi bi-shield-check"></i> Biometric Encryption & Retention Active (30 Days)</span>
+        </div>
+    </div>
+</div>
+
+<!-- Storage Analysis & Historical Data Purge -->
+<div class="card" id="data-cleanup-section" style="margin-bottom:24px;">
+    <div class="card-title">
+        <span><i class="bi bi-database-check text-primary"></i> Storage Analysis & Historical Transit Data Cleanup</span>
+        <button class="btn-secondary" style="padding:4px 10px;font-size:12px;" onclick="loadSettingsStorageAnalysis()"><i class="bi bi-arrow-clockwise"></i> Analyze Storage</button>
+    </div>
+
+    <!-- Storage Gauges -->
+    <div style="display:grid;grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));gap:12px;margin-bottom:20px;">
+        <div style="background:var(--bg-card-hover);padding:14px;border-radius:var(--radius-sm);border:1px solid var(--border-color);text-align:center;">
+            <div style="font-size:11px;color:var(--text-muted);font-weight:600;">Photo Uploads Size</div>
+            <div style="font-size:20px;font-weight:800;color:var(--text-main);margin:4px 0;" id="set-storage-uploads-mb">0 MB</div>
+            <div style="font-size:11px;color:var(--text-muted);" id="set-storage-uploads-cnt">0 photos on disk</div>
+        </div>
+        <div style="background:var(--bg-card-hover);padding:14px;border-radius:var(--radius-sm);border:1px solid var(--border-color);text-align:center;">
+            <div style="font-size:11px;color:var(--text-muted);font-weight:600;">Face Crops Storage</div>
+            <div style="font-size:20px;font-weight:800;color:var(--text-main);margin:4px 0;" id="set-storage-crops-mb">0 MB</div>
+            <div style="font-size:11px;color:var(--text-muted);" id="set-storage-crops-cnt">0 crops on disk</div>
+        </div>
+        <div style="background:var(--bg-card-hover);padding:14px;border-radius:var(--radius-sm);border:1px solid var(--border-color);text-align:center;">
+            <div style="font-size:11px;color:var(--text-muted);font-weight:600;">SQLite Database</div>
+            <div style="font-size:20px;font-weight:800;color:var(--text-main);margin:4px 0;" id="set-storage-db-mb">0 MB</div>
+            <div style="font-size:11px;color:var(--text-muted);">Indexed database</div>
+        </div>
+        <div style="background:var(--accent-primary-light);padding:14px;border-radius:var(--radius-sm);border:1px solid var(--accent-primary);text-align:center;">
+            <div style="font-size:11px;color:var(--accent-primary);font-weight:700;">Total Storage Used</div>
+            <div style="font-size:20px;font-weight:800;color:var(--accent-primary);margin:4px 0;" id="set-storage-total-mb">0 MB</div>
+            <div style="font-size:11px;color:var(--text-muted);">Total disk footprint</div>
+        </div>
+    </div>
+
+    <!-- Cleanup Controls -->
+    <div style="background:var(--bg-card-hover);padding:16px;border-radius:var(--radius-sm);border:1px solid var(--border-color);margin-bottom:20px;">
+        <h4 style="font-size:14px;font-weight:700;margin:0 0 10px 0;color:var(--text-main);">
+            <i class="bi bi-trash3 text-danger"></i> Delete Historical Data to Free Storage
+        </h4>
+        <div style="display:grid;grid-template-columns: 2fr 1fr auto;gap:12px;align-items:center;">
+            <div>
+                <label class="form-label" style="font-size:12px;font-weight:600;">Select Purge Scope:</label>
+                <select id="set-cleanup-select" class="form-select">
+                    <option value="all_completed">All Completed Journeys (Any age)</option>
+                    <option value="all_data">All Journeys & Photo History (Full Reset / Clean Slate)</option>
+                    <option value="older_than_days" data-days="7">Completed journeys older than 7 days</option>
+                    <option value="older_than_days" data-days="15">Completed journeys older than 15 days</option>
+                    <option value="older_than_days" data-days="30">Completed journeys older than 30 days</option>
+                </select>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:4px;padding-top:14px;">
+                <label style="font-size:12px;display:flex;align-items:center;gap:6px;cursor:pointer;">
+                    <input type="checkbox" id="set-delete-files" checked> Delete photos from disk
+                </label>
+                <label style="font-size:12px;display:flex;align-items:center;gap:6px;cursor:pointer;">
+                    <input type="checkbox" id="set-delete-audits"> Prune matching audit logs
+                </label>
+            </div>
+            <div style="padding-top:12px;">
+                <button class="btn-primary" style="background:#dc2626;border-color:#dc2626;" onclick="executeSettingsDataCleanup()" id="btn-set-cleanup">
+                    <i class="bi bi-trash3"></i> Purge Selected Data
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Historical Journeys Breakdown -->
+    <h4 style="font-size:14px;font-weight:700;margin:0 0 10px 0;color:var(--text-main);">
+        Historical Journeys & Storage Allocation
+    </h4>
+    <div class="table-responsive" style="max-height:260px;overflow-y:auto;border:1px solid var(--border-color);border-radius:var(--radius-sm);">
+        <table class="custom-table" style="font-size:12px;">
+            <thead>
+                <tr>
+                    <th>Journey Code</th>
+                    <th>Bus</th>
+                    <th>Route</th>
+                    <th>Status</th>
+                    <th>Photos</th>
+                    <th>Passengers</th>
+                    <th>Disk Used</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody id="set-journeys-tbody">
+                <tr><td colspan="8" class="text-center py-3" style="color:var(--text-muted);">Loading historical records...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Audit Log Viewer -->
+<div class="card">
+    <div class="card-title">
+        <span><i class="bi bi-journal-text text-primary"></i> System Security & Audit Log</span>
+        <button class="btn-secondary" style="padding:4px 10px;font-size:12px;" onclick="loadAuditLogs()"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
+    </div>
+
+    <div class="table-responsive">
+        <table class="custom-table">
+            <thead>
+                <tr>
+                    <th>Timestamp</th>
+                    <th>User</th>
+                    <th>Action</th>
+                    <th>Target Entity</th>
+                    <th>IP Address</th>
+                    <th>Details</th>
+                </tr>
+            </thead>
+            <tbody id="audit-logs-tbody">
+                <tr><td colspan="6" class="text-center py-4" style="color:var(--text-muted)">Loading audit trail...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+    loadThresholds();
+    loadAuditLogs();
+});
+
+async function loadThresholds() {
+    try {
+        const res = await fetch("/api/settings/thresholds");
+        if (!res.ok) return;
+        const data = await res.json();
+        
+        document.getElementById("thresh-high").value = data.SIMILARITY_HIGH_THRESHOLD;
+        document.getElementById("thresh-high-val").textContent = data.SIMILARITY_HIGH_THRESHOLD;
+
+        document.getElementById("thresh-med").value = data.SIMILARITY_MEDIUM_THRESHOLD;
+        document.getElementById("thresh-med-val").textContent = data.SIMILARITY_MEDIUM_THRESHOLD;
+
+        document.getElementById("thresh-low").value = data.SIMILARITY_LOW_THRESHOLD;
+        document.getElementById("thresh-low-val").textContent = data.SIMILARITY_LOW_THRESHOLD;
+
+        document.getElementById("thresh-missed").value = data.MISSED_OBSERVATIONS_FOR_EXIT_UNCONFIRMED;
+        document.getElementById("thresh-blur").value = data.BLUR_THRESHOLD;
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+async function saveThresholds(e) {
+    e.preventDefault();
+    const payload = {
+        SIMILARITY_HIGH_THRESHOLD: parseFloat(document.getElementById("thresh-high").value),
+        SIMILARITY_MEDIUM_THRESHOLD: parseFloat(document.getElementById("thresh-med").value),
+        SIMILARITY_LOW_THRESHOLD: parseFloat(document.getElementById("thresh-low").value),
+        MISSED_OBSERVATIONS_FOR_EXIT_UNCONFIRMED: parseInt(document.getElementById("thresh-missed").value),
+        BLUR_THRESHOLD: parseFloat(document.getElementById("thresh-blur").value)
+    };
+
+    try {
+        const res = await fetch("/api/settings/thresholds", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+        if (res.ok) {
+            showToast("Threshold settings saved successfully.", "success");
+            loadAuditLogs();
+        } else {
+            showToast("Failed to save settings.", "error");
+        }
+    } catch (err) {
+        showToast("Error updating settings.", "error");
+    }
+}
+
+async function loadAuditLogs() {
+    try {
+        const res = await fetch("/api/settings/audit-logs");
+        if (!res.ok) return;
+        const data = await res.json();
+        const tbody = document.getElementById("audit-logs-tbody");
+        tbody.innerHTML = "";
+
+        if (!data.items || data.items.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4" style="color:var(--text-muted)">No audit log entries recorded yet.</td></tr>`;
+            return;
+        }
+
+        data.items.forEach(log => {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+                <td>${log.created_at}</td>
+                <td><strong>${log.username || 'System'}</strong></td>
+                <td><span class="badge-status badge-present">${log.action}</span></td>
+                <td>${log.entity_type || '-'} ${log.entity_id ? '#' + log.entity_id : ''}</td>
+                <td><code>${log.ip_address || '-'}</code></td>
+                <td><small style="color:var(--text-muted);">${JSON.stringify(log.details || {})}</small></td>
+            `;
+            tbody.appendChild(tr);
+        });
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+// Storage Analysis and Cleanup
+document.addEventListener("DOMContentLoaded", () => {
+    loadSettingsStorageAnalysis();
+});
+
+async function loadSettingsStorageAnalysis() {
+    try {
+        const res = await fetch("/api/settings/data-analysis");
+        if (!res.ok) return;
+        const data = await res.json();
+
+        document.getElementById("set-storage-uploads-mb").textContent = `${data.storage.uploads_mb} MB`;
+        document.getElementById("set-storage-uploads-cnt").textContent = `${data.counts.total_uploads} photos on disk`;
+        document.getElementById("set-storage-crops-mb").textContent = `${data.storage.crops_mb} MB`;
+        document.getElementById("set-storage-crops-cnt").textContent = `${data.counts.total_observations} crops on disk`;
+        document.getElementById("set-storage-db-mb").textContent = `${data.storage.db_mb} MB`;
+        document.getElementById("set-storage-total-mb").textContent = `${data.storage.total_mb} MB`;
+
+        const tbody = document.getElementById("set-journeys-tbody");
+        if (!data.journeys || data.journeys.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="8" class="text-center py-3" style="color:var(--text-muted)">No journeys found.</td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = data.journeys.map(j => `
+            <tr>
+                <td><strong>${escapeHtml(j.journey_code)}</strong></td>
+                <td>${escapeHtml(j.bus_number)}</td>
+                <td><small>${escapeHtml(j.route)}</small></td>
+                <td><span class="badge-status ${j.status === 'active' ? 'badge-present' : 'badge-exit-confirmed'}">${j.status}</span></td>
+                <td>${j.photo_count}</td>
+                <td>${j.passenger_count}</td>
+                <td><strong>${j.size_mb} MB</strong></td>
+                <td>
+                    <button class="btn-secondary" style="padding:2px 8px;font-size:11px;color:#dc2626;" onclick="deleteSettingsSingleJourney(${j.id}, '${escapeHtml(j.journey_code)}')">
+                        <i class="bi bi-trash3 text-danger"></i> Delete
+                    </button>
+                </td>
+            </tr>
+        `).join("");
+    } catch (e) {
+        console.error("Storage analysis failed:", e);
+    }
+}
+
+async function executeSettingsDataCleanup() {
+    const select = document.getElementById("set-cleanup-select");
+    const selectedOption = select.options[select.selectedIndex];
+    const cleanupType = select.value;
+    const days = selectedOption.dataset.days ? parseInt(selectedOption.dataset.days) : 30;
+    const deleteFiles = document.getElementById("set-delete-files").checked;
+    const deleteAudits = document.getElementById("set-delete-audits").checked;
+
+    if (!confirm(`Are you sure you want to permanently delete these historical transit records and free disk space?`)) {
+        return;
+    }
+
+    const btn = document.getElementById("btn-set-cleanup");
+    btn.disabled = true;
+    btn.innerHTML = `<i class="bi bi-arrow-repeat spin"></i> Purging Data...`;
+
+    try {
+        const res = await fetch("/api/settings/data-cleanup", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                cleanup_type: cleanupType,
+                days: days,
+                delete_disk_files: deleteFiles,
+                delete_audit_logs: deleteAudits
+            })
+        });
+        const data = await res.json();
+        if (res.ok) {
+            showToast(`Deleted ${data.deleted_journeys} journeys, freed ${data.freed_mb} MB.`);
+            loadSettingsStorageAnalysis();
+            loadAuditLogs();
+        } else {
+            showToast(data.error || "Cleanup failed.", "error");
+        }
+    } catch (e) {
+        showToast("Error: " + e.message, "error");
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = `<i class="bi bi-trash3"></i> Purge Selected Data`;
+    }
+}
+
+async function deleteSettingsSingleJourney(journeyId, journeyCode) {
+    if (!confirm(`Permanently delete historical journey ${journeyCode} and its photos?`)) {
+        return;
+    }
+
+    try {
+        const res = await fetch("/api/settings/data-cleanup", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                cleanup_type: "single_journey",
+                journey_id: journeyId,
+                delete_disk_files: true
+            })
+        });
+        const data = await res.json();
+        if (res.ok) {
+            showToast(`Deleted journey ${journeyCode} (Freed ${data.freed_mb} MB)`);
+            loadSettingsStorageAnalysis();
+            loadAuditLogs();
+        } else {
+            showToast(data.error || "Failed to delete journey.", "error");
+        }
+    } catch (e) {
+        showToast("Error: " + e.message, "error");
+    }
+}
+
+function escapeHtml(text) {
+    if (!text) return "";
+    return text.toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+</script>
+{% endblock %}

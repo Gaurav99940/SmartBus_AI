@@ -1,0 +1,569 @@
+{% extends "base.html" %}
+
+{% block page_title %}Route Stops & Passenger Trajectory{% endblock %}
+
+{% block content %}
+<div class="content-container">
+    <!-- Top Route Banner & Stats -->
+    <div class="card" style="margin-bottom:20px;padding:20px 24px;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px;">
+            <div>
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+                    <span class="badge-status badge-present" style="font-size:12px;padding:4px 10px;">
+                        <i class="bi bi-bus-front-fill"></i> Active Route Telemetry
+                    </span>
+                    <span class="badge-status" style="background:#e0e7ff;color:#4338ca;font-size:12px;padding:4px 10px;">
+                        <i class="bi bi-speedometer"></i> Speed: 0 - 15 km/h
+                    </span>
+                </div>
+                <h3 style="font-size:20px;font-weight:700;color:var(--text-main);margin-bottom:4px;" id="route-title">
+                    Route: Koshambi Bus Stand &rarr; Sahibabad &rarr; Vaishali Sector-1
+                </h3>
+                <p style="font-size:13px;color:var(--text-muted);margin:0;">
+                    Sequential transit stops, location telemetry (0-15 km/h), and individual passenger travel trajectories.
+                </p>
+            </div>
+
+            <!-- Top Action Buttons -->
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+                {% if session.get('role') == 'admin' %}
+                <button type="button" class="btn-secondary" onclick="openUPRoutesDirectoryModal()" style="padding:8px 14px;font-size:13px;font-weight:600;">
+                    <i class="bi bi-map-fill text-primary"></i> UP Routes Directory
+                </button>
+                <button type="button" class="btn-secondary" onclick="scrollToFleetMonitoring()" style="padding:8px 14px;font-size:13px;font-weight:600;">
+                    <i class="bi bi-truck-front-fill text-primary"></i> Fleet Route Monitoring
+                </button>
+                {% endif %}
+                <button type="button" class="btn-secondary" onclick="downloadTimelineReport('csv')" style="padding:8px 12px;font-size:13px;font-weight:600;" title="Export Passenger CSV Report">
+                    <i class="bi bi-filetype-csv text-success"></i> CSV Report
+                </button>
+                <button type="button" class="btn-secondary" onclick="downloadTimelineReport('pdf')" style="padding:8px 14px;font-size:13px;font-weight:600;" title="Export Certified PDF Manifest with Passenger Face Icons">
+                    <i class="bi bi-file-earmark-pdf-fill text-danger"></i> PDF Report (With Faces)
+                </button>
+                <button type="button" class="btn-secondary" onclick="loadRouteData(currentSelectedBusId)" style="padding:8px 12px;font-size:13px;">
+                    <i class="bi bi-arrow-repeat"></i> Refresh
+                </button>
+                <button type="button" class="btn-primary" onclick="toggleQuickStopsBuilder()" style="padding:8px 16px;font-size:13px;font-weight:600;background:#4f46e5;border-color:#4f46e5;">
+                    <i class="bi bi-pencil-square"></i> Manual Stops Builder & Drop Box
+                </button>
+                <button type="button" class="btn-secondary" onclick="openAddStopModal()" style="padding:8px 12px;font-size:13px;">
+                    <i class="bi bi-plus-circle-fill"></i> + Single Stop
+                </button>
+            </div>
+        </div>
+
+        {% if session.get('role') == 'admin' %}
+        <!-- Admin Multi-Bus Fleet Switcher -->
+        <div style="margin-top:16px;padding:12px 16px;background:var(--bg-app);border-radius:var(--radius-sm);border:1px solid var(--border-color);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                <span class="badge-status" style="background:#e0e7ff;color:#3730a3;font-size:11px;font-weight:700;padding:4px 10px;">
+                    <i class="bi bi-shield-lock-fill"></i> Admin Fleet Control
+                </span>
+                <label for="admin-bus-switcher" style="font-size:13px;font-weight:600;margin:0;color:var(--text-main);">
+                    <i class="bi bi-bus-front"></i> Switch Bus to Inspect:
+                </label>
+                <select id="admin-bus-switcher" class="form-select" style="min-width:320px;font-weight:600;" onchange="onAdminBusSwitch(this.value)">
+                    <option value="">Loading registered fleet buses...</option>
+                </select>
+            </div>
+            <div id="admin-bus-info-pill" style="font-size:12px;color:var(--text-muted);font-weight:600;">
+                <!-- Telemetry freshness and bus metadata -->
+            </div>
+        {% else %}
+        <!-- Operator Locked Bus Indicator (No Switcher) -->
+        <div style="margin-top:12px;font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:8px;">
+            <span class="badge-status badge-present" style="font-size:11px;padding:3px 8px;">
+                <i class="bi bi-check-circle-fill"></i> My Registered Bus
+            </span>
+            <span id="operator-bus-label" style="font-weight:600;color:var(--text-main);">Loading your assigned vehicle...</span>
+        </div>
+        {% endif %}
+
+        <!-- Metric KPI Cards -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(170px, 1fr));gap:14px;margin-top:20px;">
+            <div class="stat-card" style="padding:14px;background:var(--bg-app);border-radius:var(--radius-sm);">
+                <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px;">Total Route Stops</div>
+                <div style="font-size:24px;font-weight:700;color:var(--text-main);" id="stat-total-stops">31</div>
+                <small style="font-size:11px;color:var(--text-muted);">Start to Terminal</small>
+            </div>
+            <div class="stat-card" style="padding:14px;background:var(--bg-app);border-radius:var(--radius-sm);">
+                <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px;">Average Bus Speed</div>
+                <div style="font-size:24px;font-weight:700;color:var(--accent-primary);" id="stat-avg-speed">8.7 <span style="font-size:14px;font-weight:500;">km/h</span></div>
+                <small style="font-size:11px;color:var(--text-muted);">Range: 3 - 15 km/h</small>
+            </div>
+            <div class="stat-card" style="padding:14px;background:var(--bg-app);border-radius:var(--radius-sm);">
+                <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px;">Max Speed Recorded</div>
+                <div style="font-size:24px;font-weight:700;color:#10b981;" id="stat-max-speed">15.0 <span style="font-size:14px;font-weight:500;">km/h</span></div>
+                <small style="font-size:11px;color:var(--text-muted);">Pacific Mall / Kaushambi</small>
+            </div>
+            <div class="stat-card" style="padding:14px;background:var(--bg-app);border-radius:var(--radius-sm);">
+                <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px;">Tracked Passengers</div>
+                <div style="font-size:24px;font-weight:700;color:#0ea5e9;" id="stat-passenger-count">0</div>
+                <small style="font-size:11px;color:var(--text-muted);">Individual trajectories</small>
+            </div>
+            <div class="stat-card" style="padding:14px;background:var(--bg-app);border-radius:var(--radius-sm);">
+                <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px;">Trajectory Legend</div>
+                <div style="display:flex;flex-direction:column;gap:4px;font-size:11px;margin-top:4px;">
+                    <span><strong style="color:#10b981;">&#9644;&#9644; GREEN:</strong> Traveled Segment</span>
+                    <span><strong style="color:#ef4444;">&#9644;&#9644; RED:</strong> Route Not Traveled</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if session.get('role') == 'admin' %}
+    <!-- Admin Fleet Route Monitoring Consolidated Dashboard -->
+    <div id="admin-fleet-monitoring-card" class="card" style="margin-bottom:24px;padding:20px;border-left:4px solid var(--accent-primary);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:10px;">
+            <div>
+                <h4 style="font-size:16px;font-weight:700;margin:0;color:var(--text-main);">
+                    <i class="bi bi-grid-3x3-gap-fill text-primary"></i> Consolidated Fleet Route Monitoring & Bus Switcher
+                </h4>
+                <p style="font-size:12px;color:var(--text-muted);margin:3px 0 0 0;">
+                    Monitor all registered buses across Uttar Pradesh corridors: check assigned route, configured stops, and switch bus to inspect telemetry.
+                </p>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <button type="button" class="btn-secondary" style="font-size:12px;padding:6px 12px;font-weight:600;" onclick="loadFleetSummaryTable()">
+                    <i class="bi bi-arrow-repeat"></i> Reload Fleet
+                </button>
+                <button type="button" class="btn-primary" style="font-size:12px;padding:6px 14px;font-weight:600;" onclick="openUPRoutesDirectoryModal()">
+                    <i class="bi bi-map-fill"></i> UP Master Routes Directory
+                </button>
+            </div>
+        </div>
+
+        <div class="table-responsive" style="max-height:300px;overflow-y:auto;border:1px solid var(--border-color);border-radius:6px;background:#ffffff;">
+            <table class="custom-table" style="font-size:12px;margin:0;">
+                <thead style="position:sticky;top:0;background:#f8fafc;z-index:2;">
+                    <tr>
+                        <th style="min-width:130px;">Bus / Registration</th>
+                        <th style="min-width:140px;">Assigned Operator</th>
+                        <th style="min-width:200px;">Selected UP Transit Route</th>
+                        <th style="min-width:180px;">Origin &rarr; Destination</th>
+                        <th style="min-width:90px;">Stops Count</th>
+                        <th style="min-width:110px;">Status / GPS</th>
+                        <th style="min-width:110px;text-align:right;">Action</th>
+                    </tr>
+                </thead>
+                <tbody id="admin-fleet-summary-tbody">
+                    <tr><td colspan="7" class="text-center py-4" style="color:var(--text-muted);"><i class="bi bi-arrow-repeat spin"></i> Loading fleet route summary...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Quick Stops Builder: List Form & Bulk Drop Box (Admin & Operator Accessible) -->
+    <div id="quick-stops-builder-card" class="card" style="margin-bottom:24px;padding:20px;border-left:4px solid #6366f1;display:none;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:12px;">
+            <div>
+                <h4 style="font-size:16px;font-weight:700;margin:0;color:var(--text-main);display:flex;align-items:center;gap:8px;">
+                    <i class="bi bi-ui-checks-grid text-primary"></i> Manual Stops Builder & Drop Box
+                    <span class="badge-status" style="background:#e0e7ff;color:#3730a3;font-size:11px;">Admin & Operator Mode</span>
+                </h4>
+                <p style="font-size:12px;color:var(--text-muted);margin:4px 0 0 0;">
+                    Khud apna route aur apne stops likhein: List-by-list form me ek-ek stop likhein ya drop box me direct paste karein, aur instant stops timeline generate karein.
+                </p>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <button type="button" class="btn-secondary" style="font-size:12px;padding:5px 12px;" onclick="load179StopsIntoBuilder()">
+                    <i class="bi bi-lightning-charge-fill text-warning"></i> Load 179-Stops UP Express
+                </button>
+                <button type="button" class="btn-secondary" style="font-size:12px;padding:5px 10px;color:#ef4444;" onclick="clearBuilderRows()">
+                    <i class="bi bi-trash"></i> Clear
+                </button>
+                <button type="button" class="btn-secondary" style="font-size:14px;padding:4px 10px;" onclick="toggleQuickStopsBuilder()" title="Close Builder">
+                    &times;
+                </button>
+            </div>
+        </div>
+
+        <!-- Mode Tabs: List-by-List Form vs Bulk Drop Box -->
+        <div style="display:flex;gap:8px;margin-bottom:14px;border-bottom:1px solid var(--border-color);padding-bottom:10px;">
+            <button type="button" id="tab-btn-list-form" class="btn-primary" style="font-size:12px;padding:6px 14px;font-weight:600;" onclick="switchBuilderTab('list')">
+                <i class="bi bi-list-ol"></i> 1. List-by-List Form (Ek-ek karke likhein)
+            </button>
+            <button type="button" id="tab-btn-drop-box" class="btn-secondary" style="font-size:12px;padding:6px 14px;font-weight:600;" onclick="switchBuilderTab('drop')">
+                <i class="bi bi-textarea-resize"></i> 2. Bulk Text Drop Box (Paste text/CSV)
+            </button>
+        </div>
+
+        <!-- Tab 1: Dynamic List Form (Ek-ek kr k likh sake) -->
+        <div id="builder-tab-list-content">
+            <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:12px;margin-bottom:12px;">
+                <div>
+                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Route Name / Display Title</label>
+                    <input type="text" id="builder-route-name" class="form-control" placeholder="e.g. Kaushambi - Moradabad - Lucknow Super Corridor">
+                </div>
+                <div>
+                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Start Point (Origin)</label>
+                    <input type="text" id="builder-origin" class="form-control" placeholder="Auto-detected from 1st stop">
+                </div>
+                <div>
+                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Destination</label>
+                    <input type="text" id="builder-destination" class="form-control" placeholder="Auto-detected from last stop">
+                </div>
+            </div>
+
+            <div class="table-responsive" style="max-height:300px;overflow-y:auto;border:1px solid var(--border-color);border-radius:6px;background:#fff;margin-bottom:10px;">
+                <table class="custom-table" style="font-size:11px;margin:0;">
+                    <thead style="position:sticky;top:0;background:#f8fafc;z-index:2;">
+                        <tr>
+                            <th style="width:40px;">#</th>
+                            <th style="min-width:180px;">Stop Name *</th>
+                            <th style="min-width:260px;">Location Address / Landmark</th>
+                            <th style="min-width:140px;">Time Window</th>
+                            <th style="width:90px;">Speed (km/h)</th>
+                            <th style="width:70px;text-align:center;">Major?</th>
+                            <th style="width:40px;text-align:center;">Del</th>
+                        </tr>
+                    </thead>
+                    <tbody id="builder-stops-tbody">
+                        <!-- Dynamic Stop Rows Injected Here -->
+                    </tbody>
+                </table>
+            </div>
+
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
+                <div style="display:flex;gap:8px;">
+                    <button type="button" class="btn-secondary" style="font-size:12px;padding:6px 12px;font-weight:600;" onclick="addBuilderRow()">
+                        <i class="bi bi-plus-circle-fill text-primary"></i> + Add Stop Row
+                    </button>
+                    <button type="button" class="btn-secondary" style="font-size:12px;padding:6px 12px;" onclick="addBuilderMultipleRows(5)">
+                        + Add 5 Rows
+                    </button>
+                </div>
+                <div style="font-size:12px;color:var(--text-muted);">
+                    Configured Stops: <strong id="builder-count-label" style="color:var(--accent-primary);">0</strong>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab 2: Bulk Drop Box Form (Click kr k manually stops likh de) -->
+        <div id="builder-tab-drop-content" style="display:none;">
+            <div style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:6px;padding:10px 14px;margin-bottom:10px;font-size:12px;color:#334155;">
+                <i class="bi bi-info-circle-fill text-primary"></i>
+                <strong>Drop Box Instructions:</strong> Yahan stops ko manually likhein ya spreadsheet/CSV se copy karke paste karein.
+                Format: <code>Stop Name, Location Address, Time, Speed</code> ya simple ek stop prati line likhein.
+            </div>
+            <textarea id="builder-drop-box-textarea" class="form-control" rows="8" style="font-family:monospace;font-size:12px;line-height:1.5;margin-bottom:10px;" placeholder="Click here and type or paste your stops:
+Koshambi Bus Stand, Plot Alpha Sahibabad, 06:01 PM, 3 km/h
+20/2/7 Doctor Burman Road, Sahibabad, 06:37 PM, 10 km/h
+Pacific Mall, Dr Burman Rd, 06:38 PM, 15 km/h
+Kaushambi Metro (McD), Maharajpur, 06:39 PM, 15 km/h
+Noida Sector- 62, Indirapuram, 06:55 PM, 7 km/h
+Sarvodaya Nagar, Pratap Vihar Ghaziabad, 07:10 PM, 15 km/h
+Vijay Nagar, Ghaziabad, 07:16 PM, 7 km/h
+...
+Bus Depot, Qaiserbagh, Lucknow, 05:40 AM, 13 km/h"></textarea>
+            <div style="display:flex;justify-content:flex-end;margin-bottom:14px;">
+                <button type="button" class="btn-primary" style="font-size:12px;padding:6px 14px;font-weight:600;" onclick="parseDropBoxToList()">
+                    <i class="bi bi-arrow-down-circle-fill"></i> Convert Drop Box to List Form & Preview
+                </button>
+            </div>
+        </div>
+
+        <!-- Save & Generate Timeline Bar -->
+        <div style="background:var(--bg-app);border:1px solid var(--border-color);border-radius:6px;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+            <div style="font-size:12px;color:var(--text-muted);">
+                <i class="bi bi-check2-circle text-success"></i> "Generate Stops Timeline" par click karte hi top route line, table, aur GPS map turant update ho jayenge.
+            </div>
+            <div style="display:flex;gap:10px;">
+                <button type="button" class="btn-secondary" onclick="toggleQuickStopsBuilder()">Cancel</button>
+                <button type="button" class="btn-primary" id="btn-save-builder-stops" style="font-size:13px;font-weight:700;padding:8px 20px;background:#10b981;border-color:#10b981;" onclick="submitBuilderStops()">
+                    <i class="bi bi-check-circle-fill"></i> Save & Generate Stops Timeline
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 1. TOP BUS ROUTE LINE (Master Bus Route Track) -->
+    <div class="card" style="margin-bottom:24px;padding:20px;">
+        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:10px;">
+            <span><i class="bi bi-signpost-2-fill text-primary"></i> Master Bus Route Line (Koshambi &rarr; Sahibabad &rarr; Vaishali)</span>
+            <div style="display:flex;gap:12px;font-size:12px;">
+                <span class="badge-status badge-present" style="font-size:11px;padding:4px 10px;">
+                    <i class="bi bi-bus-front-fill"></i> Complete Transit Route &bull; 31 Stops
+                </span>
+                <span class="badge-status" style="background:#fef3c7;color:#92400e;font-size:11px;padding:4px 10px;">
+                    <i class="bi bi-speedometer"></i> Speed Telemetry: 0 - 15 km/h
+                </span>
+            </div>
+        </div>
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:16px;">
+            Top continuous visual route line from Start Terminal to End Terminal with speed telemetry, sequential station stops, and timestamps.
+        </p>
+
+        <!-- Horizontal Scrollable Container for Top Bus Route Track -->
+        <div style="overflow-x:auto;padding:16px 14px 20px 14px;background:var(--bg-app);border-radius:var(--radius-sm);border:1px solid var(--border-color);">
+            <div id="top-master-route-track" style="display:flex;align-items:flex-start;min-width:1800px;position:relative;padding-top:20px;">
+                <div style="color:var(--text-muted);font-size:13px;padding:20px;text-align:center;width:100%;">
+                    <i class="bi bi-arrow-repeat spin"></i> Loading top bus route track...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. PASSENGER PHOTOS & FRONT ROUTE LINES (Kha Tak Travel Kiya Hai) -->
+    <div class="card" style="margin-bottom:24px;padding:20px;">
+        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:10px;">
+            <span><i class="bi bi-people-fill text-primary"></i> Passenger Route Lines &bull; Travel Trajectory Per Person</span>
+            <div style="display:flex;align-items:center;gap:14px;font-size:12px;">
+                <span style="display:inline-flex;align-items:center;gap:5px;font-weight:600;color:#10b981;">
+                    <span style="display:inline-block;width:16px;height:4px;background:#10b981;border-radius:2px;"></span>
+                    GREEN: Traveled Route (Boarding &rarr; Exit)
+                </span>
+                <span style="display:inline-flex;align-items:center;gap:5px;font-weight:600;color:#ef4444;">
+                    <span style="display:inline-block;width:16px;height:4px;background:#ef4444;border-radius:2px;"></span>
+                    RED: Route Not Traveled
+                </span>
+            </div>
+        </div>
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:16px;">
+            Har passenger ki photo ke aage unki exact horizontal route line bani hui hai: Green segment dikhata hai passenger ne kahan se kahan tak travel kiya, aur Red segment dikhata hai jahan passenger bus me nahi tha.
+        </p>
+
+        <!-- Passenger Trajectory Rows Container -->
+        <div id="passenger-route-lines-list" style="display:flex;flex-direction:column;gap:18px;">
+            <div style="color:var(--text-muted);font-size:13px;padding:24px;text-align:center;">
+                <i class="bi bi-arrow-repeat spin"></i> Loading passenger photos and individual route trajectories...
+            </div>
+        </div>
+    </div>
+
+    <!-- Selected Passenger Active Summary Banner -->
+    <div id="active-passenger-banner" class="card" style="margin-bottom:20px;padding:16px 20px;background:linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(6, 182, 212, 0.08) 100%);border:1px solid rgba(16, 185, 129, 0.3);">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px;">
+            <div style="display:flex;align-items:center;gap:14px;">
+                <div id="active-p-avatar-wrap">
+                    <div class="passenger-thumb" style="width:48px;height:48px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#10b981;color:#fff;font-size:18px;font-weight:700;">P</div>
+                </div>
+                <div>
+                    <h4 style="font-size:16px;font-weight:700;color:var(--text-main);margin-bottom:2px;" id="active-p-title">
+                        Passenger P001 &bull; Seat 1A
+                    </h4>
+                    <div style="font-size:12px;color:var(--text-muted);">
+                        <span style="color:#10b981;font-weight:600;"><i class="bi bi-geo-alt-fill"></i> Boarded:</span> <span id="active-p-boarding">Stop #1 &bull; Koshambi Bus Stand</span>
+                        &nbsp;&bull;&nbsp;
+                        <span style="color:#0ea5e9;font-weight:600;"><i class="bi bi-flag-fill"></i> Exit/Current:</span> <span id="active-p-exit">Stop #31 &bull; Sector-1 Vaishali Terminal</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Stats & Progress -->
+            <div style="display:flex;align-items:center;gap:20px;">
+                <div style="text-align:right;">
+                    <div style="font-size:11px;color:var(--text-muted);">Route Traveled</div>
+                    <div style="font-size:18px;font-weight:800;color:#10b981;" id="active-p-traveled-pct">100% (31/31 Stops)</div>
+                </div>
+                <div style="width:140px;height:10px;background:#fee2e2;border-radius:5px;overflow:hidden;">
+                    <div id="active-p-progress-bar" style="width:100%;height:100%;background:#10b981;border-radius:5px;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Map & Timeline Grid -->
+    <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:20px;margin-bottom:24px;">
+        <!-- Interactive Leaflet Map with Green & Red Polylines -->
+        <div class="card" style="margin-bottom:0;display:flex;flex-direction:column;">
+            <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                <span><i class="bi bi-map-fill text-primary"></i> Route Trajectory Map</span>
+                <div style="display:flex;gap:12px;font-size:12px;">
+                    <span style="color:#10b981;font-weight:600;"><i class="bi bi-circle-fill"></i> Traveled (Green)</span>
+                    <span style="color:#ef4444;font-weight:600;"><i class="bi bi-circle-fill"></i> Not Traveled (Red)</span>
+                </div>
+            </div>
+            <div id="route-map" style="width:100%;height:460px;border-radius:var(--radius-sm);border:1px solid var(--border-color);z-index:1;"></div>
+        </div>
+
+        <!-- Sequential Visual Stop Progress Track -->
+        <div class="card" style="margin-bottom:0;display:flex;flex-direction:column;">
+            <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                <span><i class="bi bi-diagram-3-fill text-primary"></i> Stop-by-Stop Progress</span>
+                <span style="font-size:11px;color:var(--text-muted);" id="stops-count-sub">31 Sequential Points</span>
+            </div>
+            <div id="stops-visual-track" style="flex:1;max-height:460px;overflow-y:auto;padding-right:8px;">
+                <!-- Generated dynamically -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Speed Timeline & Locations List Table -->
+    <div class="card">
+        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+            <span><i class="bi bi-speedometer2 text-primary"></i> Bus Speed (0-15 km/h) Timeline & Locations List</span>
+            <div style="display:flex;gap:10px;align-items:center;">
+                <input type="text" id="filter-stop-input" class="form-control" placeholder="Search stop or location..." style="width:220px;padding:4px 10px;font-size:12px;" oninput="filterStopsTable()">
+            </div>
+        </div>
+
+        <div class="table-responsive" style="max-height:540px;overflow-y:auto;">
+            <table class="custom-table" id="stops-data-table">
+                <thead>
+                    <tr>
+                        <th style="width:50px;">#</th>
+                        <th style="width:230px;">Time Window</th>
+                        <th style="width:170px;">Speed (0-15 km/h)</th>
+                        <th>Location & Address</th>
+                        <th style="width:140px;">Passenger Trajectory</th>
+                        <th style="width:90px;">Action</th>
+                    </tr>
+                </thead>
+                <tbody id="stops-table-tbody">
+                    <tr><td colspan="6" class="text-center py-4" style="color:var(--text-muted);">Loading stops data...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Manually Add Route Stop -->
+<div class="modal-overlay" id="add-stop-modal" onclick="if(event.target === this) closeAddStopModal()">
+    <div class="modal-box" style="max-width:540px;">
+        <div class="modal-header">
+            <h3 class="modal-title"><i class="bi bi-plus-circle-fill text-primary"></i> Manually Add Route Stop</h3>
+            <button type="button" class="modal-close" onclick="closeAddStopModal()">&times;</button>
+        </div>
+        <form id="add-stop-form" onsubmit="handleAddStopSubmit(event)">
+            <div class="modal-body">
+                <p style="font-size:12px;color:var(--text-muted);margin-bottom:14px;">
+                    Add an intermediate or terminal stop to the bus route with speed telemetry and GPS coordinates.
+                </p>
+
+                <div class="form-group" style="margin-bottom:12px;">
+                    <label class="form-label" style="font-size:12px;font-weight:600;">Stop Name *</label>
+                    <input type="text" id="new-stop-name" class="form-control" placeholder="e.g. Sahibabad Station Junction" required>
+                </div>
+
+                <div class="form-group" style="margin-bottom:12px;">
+                    <label class="form-label" style="font-size:12px;font-weight:600;">Full Location Address *</label>
+                    <textarea id="new-stop-address" class="form-control" rows="2" placeholder="e.g. Plot Alpha, Sahibabad Industrial Area Site 4, Ghaziabad" required></textarea>
+                </div>
+
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+                    <div class="form-group">
+                        <label class="form-label" style="font-size:12px;font-weight:600;">Time Window / Timestamp</label>
+                        <input type="text" id="new-stop-time" class="form-control" placeholder="15-10-2026 | 06:40:00 PM">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" style="font-size:12px;font-weight:600;">Bus Speed (0 - 15 km/h)</label>
+                        <input type="number" id="new-stop-speed" class="form-control" min="0" max="15" step="0.1" value="8.0" required>
+                    </div>
+                </div>
+
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+                    <div class="form-group">
+                        <label class="form-label" style="font-size:12px;font-weight:600;">Latitude</label>
+                        <input type="number" id="new-stop-lat" class="form-control" step="0.000001" value="28.647200" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" style="font-size:12px;font-weight:600;">Longitude</label>
+                        <input type="number" id="new-stop-lon" class="form-control" step="0.000001" value="77.320000" required>
+                    </div>
+                </div>
+
+                <div class="form-group" style="margin-bottom:12px;">
+                    <label class="form-label" style="font-size:12px;font-weight:600;">Insert Position</label>
+                    <select id="new-stop-insert-pos" class="form-control">
+                        <option value="">Append to End of Route</option>
+                    </select>
+                </div>
+
+                <div class="form-check" style="display:flex;align-items:center;gap:8px;margin-top:10px;">
+                    <input type="checkbox" id="new-stop-major" class="form-check-input" style="width:16px;height:16px;">
+                    <label for="new-stop-major" style="font-size:12px;cursor:pointer;">Major Bus Station / Passenger Boarding Point</label>
+                </div>
+            </div>
+
+            <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:10px;">
+                <button type="button" class="btn-secondary" onclick="closeAddStopModal()">Cancel</button>
+                <button type="submit" class="btn-primary" id="btn-save-new-stop">
+                    <i class="bi bi-check-circle-fill"></i> Add Stop to Route
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal: Uttar Pradesh Master Routes Directory & Dynamic Configuration (Admin) -->
+<div class="modal-overlay" id="up-routes-modal" onclick="if(event.target === this) closeUPRoutesDirectoryModal()">
+    <div class="modal-box" style="max-width:780px;max-height:85vh;overflow-y:auto;">
+        <div class="modal-header">
+            <div>
+                <h3 class="modal-title"><i class="bi bi-map-fill text-primary"></i> Uttar Pradesh Master Routes Library</h3>
+                <p style="font-size:12px;color:var(--text-muted);margin:2px 0 0 0;">Official UPSRTC and state transit corridors configured for bus operators</p>
+            </div>
+            <button type="button" class="modal-close" onclick="closeUPRoutesDirectoryModal()">&times;</button>
+        </div>
+        <div class="modal-body" style="padding:20px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
+                <input type="text" id="up-routes-search-input" class="form-control" placeholder="Search corridor, city, or route code..." style="max-width:320px;font-size:12px;" oninput="filterUPRoutesModal()">
+                <button type="button" class="btn-primary" style="font-size:12px;padding:6px 12px;" onclick="toggleAddUPRouteForm()">
+                    <i class="bi bi-plus-circle-fill"></i> + Add New UP Route
+                </button>
+            </div>
+
+            <!-- Dynamic New UP Route Form -->
+            <div id="new-up-route-form-container" style="display:none;background:#f8fafc;border:1px solid #cbd5e1;border-radius:6px;padding:14px;margin-bottom:16px;">
+                <h5 style="font-size:13px;font-weight:700;margin-bottom:10px;color:var(--text-main);">Create Dynamic UP Master Transit Route</h5>
+                <form id="new-up-route-form" onsubmit="handleCreateUPRouteSubmit(event)">
+                    <div style="display:grid;grid-template-columns:1fr 2fr;gap:10px;margin-bottom:10px;">
+                        <div>
+                            <label style="font-size:11px;font-weight:600;">Route Code *</label>
+                            <input type="text" id="new-up-code" class="form-control" placeholder="e.g. UP-RT-11" required>
+                        </div>
+                        <div>
+                            <label style="font-size:11px;font-weight:600;">Route Name *</label>
+                            <input type="text" id="new-up-name" class="form-control" placeholder="e.g. Mathura — Vrindavan — Aligarh Express" required>
+                        </div>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px;">
+                        <div>
+                            <label style="font-size:11px;font-weight:600;">Origin *</label>
+                            <input type="text" id="new-up-origin" class="form-control" placeholder="Mathura ISBT" required>
+                        </div>
+                        <div>
+                            <label style="font-size:11px;font-weight:600;">Destination *</label>
+                            <input type="text" id="new-up-dest" class="form-control" placeholder="Aligarh Old Bus Stand" required>
+                        </div>
+                        <div>
+                            <label style="font-size:11px;font-weight:600;">Region</label>
+                            <input type="text" id="new-up-region" class="form-control" placeholder="Braj / Western UP" value="Western UP">
+                        </div>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px;">
+                        <div>
+                            <label style="font-size:11px;font-weight:600;">Distance (km)</label>
+                            <input type="number" id="new-up-dist" class="form-control" value="65.0" step="0.1">
+                        </div>
+                        <div>
+                            <label style="font-size:11px;font-weight:600;">Duration (Hours)</label>
+                            <input type="number" id="new-up-dur" class="form-control" value="1.8" step="0.1">
+                        </div>
+                        <div>
+                            <label style="font-size:11px;font-weight:600;">Avg Speed (km/h)</label>
+                            <input type="number" id="new-up-spd" class="form-control" value="11.0" step="0.1">
+                        </div>
+                    </div>
+                    <div style="display:flex;justify-content:flex-end;gap:8px;">
+                        <button type="button" class="btn-secondary" style="font-size:12px;padding:5px 10px;" onclick="toggleAddUPRouteForm()">Cancel</button>
+                        <button type="submit" class="btn-primary" style="font-size:12px;padding:5px 14px;" id="btn-save-up-route">Save UP Route</button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- List of existing UP Routes -->
+            <div id="up-routes-modal-list" style="display:flex;flex-direction:column;gap:10px;max-height:420px;overflow-y:auto;">
+                <div class="text-center py-4" style="color:var(--text-muted);"><i class="bi bi-arrow-repeat spin"></i> Loading UP master routes...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/route_timeline.js') }}"></script>
+{% endblock %}

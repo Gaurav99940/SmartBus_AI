@@ -1,0 +1,849 @@
+{% extends "base.html" %}
+
+{% block page_title %}Upload Interior Bus Photo — Multi-Angle Passenger Detection{% endblock %}
+
+{% block content %}
+<!-- Top Context & Geolocation Bar -->
+<div class="card" style="margin-bottom:20px;">
+    <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">
+        <span><i class="bi bi-sliders text-primary"></i> Context & Geolocation</span>
+        <button type="button" class="btn-secondary" style="padding:4px 12px;font-size:12px;" onclick="openSeatingConfigModal()">
+            <i class="bi bi-gear-fill text-primary"></i> Seating Area Configuration
+        </button>
+    </div>
+
+    <form id="context-form" onsubmit="event.preventDefault();">
+        <div style="display:grid;grid-template-columns: 1fr 1fr;gap:20px;">
+            <!-- Left: Journey and Timestamps -->
+            <div>
+                <div class="form-group">
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+                        <label class="form-label" for="journey-select" style="margin-bottom:0;">Target Journey & Bus *</label>
+                        <button type="button" class="btn-secondary" style="padding:2px 10px;font-size:11px;" onclick="openQuickNewJourneyModal()">
+                            <i class="bi bi-plus-circle"></i> + New Journey
+                        </button>
+                    </div>
+                    <select id="journey-select" class="form-select" required>
+                        <option value="">Loading active journeys...</option>
+                    </select>
+                    <!-- Quick Launch banner if no active journeys exist -->
+                    <div id="no-journey-banner" style="display:none;margin-top:8px;padding:10px 12px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.25);border-radius:var(--radius-sm);font-size:12px;">
+                        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+                            <span style="color:#ef4444;font-weight:600;"><i class="bi bi-exclamation-circle-fill"></i> No active journey running</span>
+                            <button type="button" class="btn-primary" style="padding:4px 10px;font-size:11px;background:#10b981;border-color:#10b981;" onclick="quickStartActiveJourney()">
+                                <i class="bi bi-play-circle-fill"></i> Launch Journey Now
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="input-timestamp">
+                        Master Photo Capture Timestamp
+                        <small style="color:var(--text-muted);font-weight:normal;">(Extracted from EXIF or manual)</small>
+                    </label>
+                    <input type="text" id="input-timestamp" class="form-control" placeholder="YYYY-MM-DD HH:MM:SS" required>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="stop-select">
+                        <i class="bi bi-geo-alt-fill text-danger"></i> Current Bus Stop / Photo Location
+                        <small style="color:var(--text-muted);font-weight:normal;">(Select where this photo was taken; auto-syncs GPS and marks passenger presence)</small>
+                    </label>
+                    <select id="stop-select" class="form-select" onchange="onStopSelectChange(this.value)">
+                        <option value="">-- Select Stop / Location (e.g. Stop #1 Koshambi Bus Stand) --</option>
+                    </select>
+                </div>
+
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;" class="form-group">
+                    <div>
+                        <label class="form-label" for="input-latitude">GPS Latitude</label>
+                        <input type="number" step="any" id="input-latitude" class="form-control" placeholder="e.g. 37.774900">
+                    </div>
+                    <div>
+                        <label class="form-label" for="input-longitude">GPS Longitude</label>
+                        <input type="number" step="any" id="input-longitude" class="form-control" placeholder="e.g. -122.419400">
+                    </div>
+                </div>
+                <input type="hidden" id="input-location-source" value="NONE">
+            </div>
+
+            <!-- Right: Mini Map Picker -->
+            <div>
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+                    <label class="form-label" style="margin-bottom:0;">Pick Location on Map:</label>
+                    <button type="button" class="btn-secondary" style="padding:4px 10px;font-size:12px;" onclick="useDeviceGPS()">
+                        <i class="bi bi-crosshair"></i> Use Device GPS
+                    </button>
+                </div>
+                <div id="picker-map" style="height:150px;border-radius:var(--radius-sm);margin-bottom:8px;"></div>
+                <div id="metadata-warnings" class="privacy-notice-box" style="display:none;padding:8px 12px;margin-bottom:0;font-size:12px;background:var(--status-possibly-absent-bg);border-left-color:var(--status-possibly-absent-text);"></div>
+            </div>
+        </div>
+    </form>
+</div>
+
+<!-- Three Multi-Angle Camera Upload Cards -->
+<div style="margin-bottom:24px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <h3 style="font-size:16px;font-weight:600;color:var(--text-main);display:flex;align-items:center;gap:8px;">
+            <i class="bi bi-camera-reels-fill text-primary"></i> Multi-Angle Bus Interior Views
+            <small style="font-size:13px;font-weight:normal;color:var(--text-muted);">(Angles A, B, and C can be submitted together or partially)</small>
+        </h3>
+        <div id="angles-status-summary" style="font-size:12px;color:var(--text-muted);">
+            <span class="badge-status badge-possibly-absent" id="angles-readiness-badge">0 of 3 Angles Selected</span>
+        </div>
+    </div>
+
+    <!-- Responsive 3-Column / Stacked Grid -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(320px, 1fr));gap:20px;">
+        
+        <!-- SECTION A: Angle A — Front / Assigned Seating Section -->
+        <div class="card" id="card-angle-a" style="margin-bottom:0;display:flex;flex-direction:column;border:2px solid transparent;transition:border-color 0.2s;">
+            <div class="card-title" style="margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-start;">
+                <div>
+                    <h4 style="font-size:15px;font-weight:700;color:var(--text-main);margin-bottom:2px;" id="title-angle-a">
+                        Angle A — Front
+                    </h4>
+                    <span class="badge-status badge-present" id="label-angle-a" style="font-size:11px;">Front Rows: 1A-2D</span>
+                </div>
+                <span class="badge-status" id="status-badge-a" style="background:#f1f5f9;color:#64748b;">Missing</span>
+            </div>
+
+            <!-- ANGLE A — SOURCE CLIP FOLDER -->
+            <div style="background:var(--bg-app);border:1px solid var(--border-color);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:12px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                    <span style="font-size:11px;font-weight:700;color:var(--text-main);"><i class="bi bi-folder-fill text-primary"></i> ANGLE A — SOURCE CLIP FOLDER</span>
+                    <span id="folder-status-a" class="badge-status" style="font-size:10px;background:#f1f5f9;color:#64748b;">No Folder</span>
+                </div>
+                <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;word-break:break-all;" id="folder-path-display-a">
+                    Path: <span style="font-style:italic;">None selected</span>
+                </div>
+                <div style="display:flex;align-items:center;justify-content:space-between;font-size:11px;margin-bottom:8px;">
+                    <span>Clips: <strong id="folder-clips-count-a">0</strong></span>
+                    <span>Images: <strong id="folder-images-count-a">0</strong></span>
+                </div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                    <button type="button" class="btn-primary" style="padding:3px 8px;font-size:11px;" onclick="selectFolderDialog('A')">
+                        <i class="bi bi-folder2-open"></i> Select Folder
+                    </button>
+                    <button type="button" class="btn-secondary" style="padding:3px 8px;font-size:11px;" onclick="rescanFolder('A')">
+                        <i class="bi bi-arrow-repeat"></i> Scan
+                    </button>
+                    <button type="button" class="btn-secondary" style="padding:3px 8px;font-size:11px;" onclick="clearFolderSelection('A')">
+                        <i class="bi bi-x-circle"></i> Clear
+                    </button>
+                </div>
+                <div id="folder-error-a" style="display:none;margin-top:6px;padding:4px 8px;background:#fee2e2;color:#b91c1c;border-radius:4px;font-size:10px;"></div>
+            </div>
+
+            <!-- Angle A Dropzone -->
+            <div id="dropzone-a" class="upload-dropzone" style="flex:1;min-height:220px;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:24px 14px;">
+                <input type="file" id="file-input-a" accept="image/jpeg,image/png,image/webp,video/mp4,video/avi,video/quicktime,video/x-matroska,video/*" style="display:none;" onchange="handleAngleFileSelected('A', this.files[0])">
+                <div id="prompt-a">
+                    <i class="bi bi-cloud-arrow-up-fill dropzone-icon" style="font-size:32px;"></i>
+                    <h5 style="font-size:14px;font-weight:600;margin-bottom:4px;">Angle A (Front Section)</h5>
+                    <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">Drag photo/video clip or click to browse</p>
+                    <button type="button" class="btn-secondary" style="padding:4px 12px;font-size:11px;" onclick="event.stopPropagation();document.getElementById('file-input-a').click();">
+                        <i class="bi bi-folder2-open"></i> Browse Files
+                    </button>
+                </div>
+
+                <!-- Preview container -->
+                <div id="preview-container-a" style="display:none;width:100%;position:relative;">
+                    <img id="preview-img-a" src="#" alt="Angle A Preview" style="width:100%;max-height:200px;object-fit:cover;border-radius:var(--radius-sm);display:none;">
+                    <video id="preview-video-a" controls style="width:100%;max-height:200px;border-radius:var(--radius-sm);display:none;background:#000;"></video>
+                    <div style="position:absolute;top:6px;right:6px;display:flex;gap:6px;z-index:10;">
+                        <button type="button" class="btn-secondary" style="padding:4px 8px;font-size:11px;background:rgba(0,0,0,0.7);color:#fff;border:none;" onclick="event.stopPropagation();document.getElementById('file-input-a').click();" title="Replace Media">
+                            <i class="bi bi-arrow-repeat"></i> Replace
+                        </button>
+                        <button type="button" class="btn-secondary" style="padding:4px 8px;font-size:11px;background:rgba(239,68,68,0.85);color:#fff;border:none;" onclick="event.stopPropagation();removeAnglePhoto('A');" title="Remove Media">
+                            <i class="bi bi-trash-fill"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Angle A Meta & Status Details -->
+            <div style="margin-top:12px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;font-size:12px;margin-bottom:6px;">
+                    <span style="color:var(--text-muted);"><i class="bi bi-clock"></i> Capture Time:</span>
+                    <input type="text" id="timestamp-a" class="form-control" style="width:170px;padding:4px 8px;font-size:11px;" placeholder="YYYY-MM-DD HH:MM:SS">
+                </div>
+                <div id="metrics-pill-a" style="display:none;padding:6px 10px;background:var(--accent-primary-light);border-radius:var(--radius-sm);font-size:12px;display:flex;justify-content:space-between;">
+                    <span><strong>Detected:</strong> <span id="count-detected-a">0</span></span>
+                    <span><strong>Review:</strong> <span id="count-uncertain-a">0</span></span>
+                </div>
+                <div id="error-box-a" style="display:none;margin-top:6px;padding:6px 10px;background:#fee2e2;color:#b91c1c;border-radius:var(--radius-sm);font-size:11px;"></div>
+            </div>
+        </div>
+
+        <!-- SECTION B: Angle B — Middle / Assigned Seating Section -->
+        <div class="card" id="card-angle-b" style="margin-bottom:0;display:flex;flex-direction:column;border:2px solid transparent;transition:border-color 0.2s;">
+            <div class="card-title" style="margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-start;">
+                <div>
+                    <h4 style="font-size:15px;font-weight:700;color:var(--text-main);margin-bottom:2px;" id="title-angle-b">
+                        Angle B — Middle
+                    </h4>
+                    <span class="badge-status badge-present" id="label-angle-b" style="font-size:11px;">Middle Rows: 3A-4D</span>
+                </div>
+                <span class="badge-status" id="status-badge-b" style="background:#f1f5f9;color:#64748b;">Missing</span>
+            </div>
+
+            <!-- ANGLE B — SOURCE CLIP FOLDER -->
+            <div style="background:var(--bg-app);border:1px solid var(--border-color);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:12px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                    <span style="font-size:11px;font-weight:700;color:var(--text-main);"><i class="bi bi-folder-fill text-primary"></i> ANGLE B — SOURCE CLIP FOLDER</span>
+                    <span id="folder-status-b" class="badge-status" style="font-size:10px;background:#f1f5f9;color:#64748b;">No Folder</span>
+                </div>
+                <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;word-break:break-all;" id="folder-path-display-b">
+                    Path: <span style="font-style:italic;">None selected</span>
+                </div>
+                <div style="display:flex;align-items:center;justify-content:space-between;font-size:11px;margin-bottom:8px;">
+                    <span>Clips: <strong id="folder-clips-count-b">0</strong></span>
+                    <span>Images: <strong id="folder-images-count-b">0</strong></span>
+                </div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                    <button type="button" class="btn-primary" style="padding:3px 8px;font-size:11px;" onclick="selectFolderDialog('B')">
+                        <i class="bi bi-folder2-open"></i> Select Folder
+                    </button>
+                    <button type="button" class="btn-secondary" style="padding:3px 8px;font-size:11px;" onclick="rescanFolder('B')">
+                        <i class="bi bi-arrow-repeat"></i> Scan
+                    </button>
+                    <button type="button" class="btn-secondary" style="padding:3px 8px;font-size:11px;" onclick="clearFolderSelection('B')">
+                        <i class="bi bi-x-circle"></i> Clear
+                    </button>
+                </div>
+                <div id="folder-error-b" style="display:none;margin-top:6px;padding:4px 8px;background:#fee2e2;color:#b91c1c;border-radius:4px;font-size:10px;"></div>
+            </div>
+
+            <!-- Angle B Dropzone -->
+            <div id="dropzone-b" class="upload-dropzone" style="flex:1;min-height:220px;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:24px 14px;">
+                <input type="file" id="file-input-b" accept="image/jpeg,image/png,image/webp,video/mp4,video/avi,video/quicktime,video/x-matroska,video/*" style="display:none;" onchange="handleAngleFileSelected('B', this.files[0])">
+                <div id="prompt-b">
+                    <i class="bi bi-cloud-arrow-up-fill dropzone-icon" style="font-size:32px;"></i>
+                    <h5 style="font-size:14px;font-weight:600;margin-bottom:4px;">Angle B (Middle Section)</h5>
+                    <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">Drag photo/video clip or click to browse</p>
+                    <button type="button" class="btn-secondary" style="padding:4px 12px;font-size:11px;" onclick="event.stopPropagation();document.getElementById('file-input-b').click();">
+                        <i class="bi bi-folder2-open"></i> Browse Files
+                    </button>
+                </div>
+
+                <!-- Preview container -->
+                <div id="preview-container-b" style="display:none;width:100%;position:relative;">
+                    <img id="preview-img-b" src="#" alt="Angle B Preview" style="width:100%;max-height:200px;object-fit:cover;border-radius:var(--radius-sm);display:none;">
+                    <video id="preview-video-b" controls style="width:100%;max-height:200px;border-radius:var(--radius-sm);display:none;background:#000;"></video>
+                    <div style="position:absolute;top:6px;right:6px;display:flex;gap:6px;z-index:10;">
+                        <button type="button" class="btn-secondary" style="padding:4px 8px;font-size:11px;background:rgba(0,0,0,0.7);color:#fff;border:none;" onclick="event.stopPropagation();document.getElementById('file-input-b').click();" title="Replace Media">
+                            <i class="bi bi-arrow-repeat"></i> Replace
+                        </button>
+                        <button type="button" class="btn-secondary" style="padding:4px 8px;font-size:11px;background:rgba(239,68,68,0.85);color:#fff;border:none;" onclick="event.stopPropagation();removeAnglePhoto('B');" title="Remove Media">
+                            <i class="bi bi-trash-fill"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Angle B Meta & Status Details -->
+            <div style="margin-top:12px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;font-size:12px;margin-bottom:6px;">
+                    <span style="color:var(--text-muted);"><i class="bi bi-clock"></i> Capture Time:</span>
+                    <input type="text" id="timestamp-b" class="form-control" style="width:170px;padding:4px 8px;font-size:11px;" placeholder="YYYY-MM-DD HH:MM:SS">
+                </div>
+                <div id="metrics-pill-b" style="display:none;padding:6px 10px;background:var(--accent-primary-light);border-radius:var(--radius-sm);font-size:12px;display:flex;justify-content:space-between;">
+                    <span><strong>Detected:</strong> <span id="count-detected-b">0</span></span>
+                    <span><strong>Review:</strong> <span id="count-uncertain-b">0</span></span>
+                </div>
+                <div id="error-box-b" style="display:none;margin-top:6px;padding:6px 10px;background:#fee2e2;color:#b91c1c;border-radius:var(--radius-sm);font-size:11px;"></div>
+            </div>
+        </div>
+
+        <!-- SECTION C: Angle C — Rear / Assigned Seating Section -->
+        <div class="card" id="card-angle-c" style="margin-bottom:0;display:flex;flex-direction:column;border:2px solid transparent;transition:border-color 0.2s;">
+            <div class="card-title" style="margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-start;">
+                <div>
+                    <h4 style="font-size:15px;font-weight:700;color:var(--text-main);margin-bottom:2px;" id="title-angle-c">
+                        Angle C — Rear
+                    </h4>
+                    <span class="badge-status badge-present" id="label-angle-c" style="font-size:11px;">Rear Rows: 5A-6D</span>
+                </div>
+                <span class="badge-status" id="status-badge-c" style="background:#f1f5f9;color:#64748b;">Missing</span>
+            </div>
+
+            <!-- ANGLE C — SOURCE CLIP FOLDER -->
+            <div style="background:var(--bg-app);border:1px solid var(--border-color);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:12px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                    <span style="font-size:11px;font-weight:700;color:var(--text-main);"><i class="bi bi-folder-fill text-primary"></i> ANGLE C — SOURCE CLIP FOLDER</span>
+                    <span id="folder-status-c" class="badge-status" style="font-size:10px;background:#f1f5f9;color:#64748b;">No Folder</span>
+                </div>
+                <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;word-break:break-all;" id="folder-path-display-c">
+                    Path: <span style="font-style:italic;">None selected</span>
+                </div>
+                <div style="display:flex;align-items:center;justify-content:space-between;font-size:11px;margin-bottom:8px;">
+                    <span>Clips: <strong id="folder-clips-count-c">0</strong></span>
+                    <span>Images: <strong id="folder-images-count-c">0</strong></span>
+                </div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                    <button type="button" class="btn-primary" style="padding:3px 8px;font-size:11px;" onclick="selectFolderDialog('C')">
+                        <i class="bi bi-folder2-open"></i> Select Folder
+                    </button>
+                    <button type="button" class="btn-secondary" style="padding:3px 8px;font-size:11px;" onclick="rescanFolder('C')">
+                        <i class="bi bi-arrow-repeat"></i> Scan
+                    </button>
+                    <button type="button" class="btn-secondary" style="padding:3px 8px;font-size:11px;" onclick="clearFolderSelection('C')">
+                        <i class="bi bi-x-circle"></i> Clear
+                    </button>
+                </div>
+                <div id="folder-error-c" style="display:none;margin-top:6px;padding:4px 8px;background:#fee2e2;color:#b91c1c;border-radius:4px;font-size:10px;"></div>
+            </div>
+
+            <!-- Angle C Dropzone -->
+            <div id="dropzone-c" class="upload-dropzone" style="flex:1;min-height:220px;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:24px 14px;">
+                <input type="file" id="file-input-c" accept="image/jpeg,image/png,image/webp,video/mp4,video/avi,video/quicktime,video/x-matroska,video/*" style="display:none;" onchange="handleAngleFileSelected('C', this.files[0])">
+                <div id="prompt-c">
+                    <i class="bi bi-cloud-arrow-up-fill dropzone-icon" style="font-size:32px;"></i>
+                    <h5 style="font-size:14px;font-weight:600;margin-bottom:4px;">Angle C (Rear Section)</h5>
+                    <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">Drag photo/video clip or click to browse</p>
+                    <button type="button" class="btn-secondary" style="padding:4px 12px;font-size:11px;" onclick="event.stopPropagation();document.getElementById('file-input-c').click();">
+                        <i class="bi bi-folder2-open"></i> Browse Files
+                    </button>
+                </div>
+
+                <!-- Preview container -->
+                <div id="preview-container-c" style="display:none;width:100%;position:relative;">
+                    <img id="preview-img-c" src="#" alt="Angle C Preview" style="width:100%;max-height:200px;object-fit:cover;border-radius:var(--radius-sm);display:none;">
+                    <video id="preview-video-c" controls style="width:100%;max-height:200px;border-radius:var(--radius-sm);display:none;background:#000;"></video>
+                    <div style="position:absolute;top:6px;right:6px;display:flex;gap:6px;z-index:10;">
+                        <button type="button" class="btn-secondary" style="padding:4px 8px;font-size:11px;background:rgba(0,0,0,0.7);color:#fff;border:none;" onclick="event.stopPropagation();document.getElementById('file-input-c').click();" title="Replace Media">
+                            <i class="bi bi-arrow-repeat"></i> Replace
+                        </button>
+                        <button type="button" class="btn-secondary" style="padding:4px 8px;font-size:11px;background:rgba(239,68,68,0.85);color:#fff;border:none;" onclick="event.stopPropagation();removeAnglePhoto('C');" title="Remove Media">
+                            <i class="bi bi-trash-fill"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Angle C Meta & Status Details -->
+            <div style="margin-top:12px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;font-size:12px;margin-bottom:6px;">
+                    <span style="color:var(--text-muted);"><i class="bi bi-clock"></i> Capture Time:</span>
+                    <input type="text" id="timestamp-c" class="form-control" style="width:170px;padding:4px 8px;font-size:11px;" placeholder="YYYY-MM-DD HH:MM:SS">
+                </div>
+                <div id="metrics-pill-c" style="display:none;padding:6px 10px;background:var(--accent-primary-light);border-radius:var(--radius-sm);font-size:12px;display:flex;justify-content:space-between;">
+                    <span><strong>Detected:</strong> <span id="count-detected-c">0</span></span>
+                    <span><strong>Review:</strong> <span id="count-uncertain-c">0</span></span>
+                </div>
+                <div id="error-box-c" style="display:none;margin-top:6px;padding:6px 10px;background:#fee2e2;color:#b91c1c;border-radius:var(--radius-sm);font-size:11px;"></div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Upload Submission Action Bar -->
+    <div class="card" style="margin-top:20px;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;">
+        <div style="font-size:13px;">
+            <i class="bi bi-info-circle-fill text-primary"></i>
+            <span id="submission-status-hint">Select Angle A, B, and/or C above to begin multi-angle processing.</span>
+        </div>
+        <button type="button" id="submit-upload-btn" class="btn-primary" style="padding:12px 28px;font-size:15px;font-weight:600;" onclick="submitMultiAnglePhotos()">
+            <i class="bi bi-cloud-arrow-up-fill"></i> Upload & Process Bus Angles
+        </button>
+    </div>
+</div>
+
+<!-- STOP TIMETABLE & AUTOMATED CLIP MATCHING -->
+<div class="card" style="margin-bottom:24px;">
+    <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">
+        <span><i class="bi bi-calendar3-range text-primary"></i> STOP TIMETABLE & AUTOMATED CLIP MATCHING</span>
+        <span id="timetable-readiness-badge" class="badge-status" style="background:#f1f5f9;color:#64748b;">No Timetable Uploaded</span>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1.2fr 1.8fr;gap:20px;">
+        <!-- Left: Timetable Upload Dropzone -->
+        <div>
+            <div id="timetable-dropzone" class="upload-dropzone" style="min-height:160px;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:16px;">
+                <input type="file" id="timetable-file-input" accept=".xlsx,.xls,.csv" style="display:none;" onchange="handleTimetableFileSelected(this.files[0])">
+                <i class="bi bi-file-earmark-spreadsheet-fill text-success" style="font-size:32px;margin-bottom:6px;"></i>
+                <h5 style="font-size:13px;font-weight:600;margin-bottom:2px;" id="timetable-file-title">Excel / CSV Timetable</h5>
+                <p style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">Drag .xlsx or .csv timetable file or click browse</p>
+                <div style="display:flex;gap:6px;">
+                    <button type="button" class="btn-primary" style="padding:4px 10px;font-size:11px;" onclick="document.getElementById('timetable-file-input').click()">
+                        <i class="bi bi-folder2-open"></i> Browse Files
+                    </button>
+                    <button type="button" class="btn-secondary" id="btn-remove-tt" style="padding:4px 10px;font-size:11px;display:none;" onclick="removeTimetableFile()">
+                        <i class="bi bi-trash-fill text-danger"></i> Remove
+                    </button>
+                </div>
+            </div>
+            <div id="timetable-file-meta" style="font-size:11px;color:var(--text-muted);margin-top:6px;display:none;"></div>
+        </div>
+
+        <!-- Right: Timetable Options & Column Mapping -->
+        <div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:10px;">
+                <div>
+                    <label class="form-label" style="font-size:11px;">Service Date</label>
+                    <input type="date" id="tt-service-date" class="form-control" style="font-size:12px;padding:4px 8px;">
+                </div>
+                <div>
+                    <label class="form-label" style="font-size:11px;">Time Window Mode</label>
+                    <select id="tt-window-mode" class="form-select" style="font-size:12px;padding:4px 8px;">
+                        <option value="ARRIVAL_DEPARTURE">Arrival to Departure</option>
+                        <option value="WINDOW_WITH_BUFFER">Window With Buffer (Tolerance)</option>
+                        <option value="POINT_FRAMES">Selected Keypoint Frames</option>
+                    </select>
+                </div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:10px;">
+                <div>
+                    <label class="form-label" style="font-size:11px;">Tolerance Buffer (± Minutes)</label>
+                    <input type="number" id="tt-tolerance-minutes" class="form-control" style="font-size:12px;padding:4px 8px;" value="3" min="0" max="60">
+                </div>
+                <div>
+                    <label class="form-label" style="font-size:11px;">Time Zone</label>
+                    <input type="text" id="tt-timezone" class="form-control" style="font-size:12px;padding:4px 8px;" value="Asia/Kolkata">
+                </div>
+            </div>
+
+            <div style="display:flex;gap:8px;margin-top:10px;">
+                <button type="button" class="btn-secondary" id="btn-validate-tt" style="padding:6px 14px;font-size:12px;" onclick="uploadAndParseTimetable()">
+                    <i class="bi bi-check2-circle text-primary"></i> Validate & Parse Timetable
+                </button>
+                <button type="button" class="btn-primary" id="btn-match-clips" style="padding:6px 14px;font-size:12px;display:none;" onclick="triggerAutoMatchClips()">
+                    <i class="bi bi-magic"></i> Auto-Match Stop Clips
+                </button>
+            </div>
+            <div id="timetable-validation-msg" style="display:none;margin-top:8px;padding:6px 10px;border-radius:var(--radius-sm);font-size:11px;"></div>
+        </div>
+    </div>
+</div>
+
+<!-- AUTOMATED STOP-WISE PROCESSING -->
+<div class="card" id="card-automated-processing" style="margin-bottom:24px;">
+    <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">
+        <span><i class="bi bi-fast-forward-circle-fill text-primary"></i> AUTOMATED STOP-WISE PROCESSING</span>
+        <span id="job-status-badge" class="badge-status" style="background:#f1f5f9;color:#64748b;">Idle</span>
+    </div>
+
+    <!-- Progress & Real-time Stats -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(130px, 1fr));gap:10px;margin-bottom:16px;">
+        <div class="stat-card" style="padding:10px;background:var(--bg-app);border-radius:var(--radius-sm);text-align:center;">
+            <div style="font-size:11px;color:var(--text-muted);">Total Stops</div>
+            <div style="font-size:20px;font-weight:700;color:var(--text-main);" id="stat-job-total">0</div>
+        </div>
+        <div class="stat-card" style="padding:10px;background:var(--bg-app);border-radius:var(--radius-sm);text-align:center;">
+            <div style="font-size:11px;color:var(--text-muted);">Processed</div>
+            <div style="font-size:20px;font-weight:700;color:#10b981;" id="stat-job-processed">0</div>
+        </div>
+        <div class="stat-card" style="padding:10px;background:var(--bg-app);border-radius:var(--radius-sm);text-align:center;">
+            <div style="font-size:11px;color:var(--text-muted);">Remaining</div>
+            <div style="font-size:20px;font-weight:700;color:var(--text-muted);" id="stat-job-remaining">0</div>
+        </div>
+        <div class="stat-card" style="padding:10px;background:var(--bg-app);border-radius:var(--radius-sm);text-align:center;">
+            <div style="font-size:11px;color:var(--text-muted);">Fully Covered</div>
+            <div style="font-size:20px;font-weight:700;color:#10b981;" id="stat-job-fully">0</div>
+        </div>
+        <div class="stat-card" style="padding:10px;background:var(--bg-app);border-radius:var(--radius-sm);text-align:center;">
+            <div style="font-size:11px;color:var(--text-muted);">Partially Covered</div>
+            <div style="font-size:20px;font-weight:700;color:#f59e0b;" id="stat-job-partially">0</div>
+        </div>
+        <div class="stat-card" style="padding:10px;background:var(--bg-app);border-radius:var(--radius-sm);text-align:center;">
+            <div style="font-size:11px;color:var(--text-muted);">Not Covered</div>
+            <div style="font-size:20px;font-weight:700;color:#64748b;" id="stat-job-not">0</div>
+        </div>
+        <div class="stat-card" style="padding:10px;background:var(--bg-app);border-radius:var(--radius-sm);text-align:center;">
+            <div style="font-size:11px;color:var(--text-muted);">Failed</div>
+            <div style="font-size:20px;font-weight:700;color:#ef4444;" id="stat-job-failed">0</div>
+        </div>
+    </div>
+
+    <!-- Progress Bar -->
+    <div style="margin-bottom:16px;">
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;">
+            <span id="job-current-step-label" style="font-weight:600;color:var(--text-main);">Current Stop: Ready to begin</span>
+            <span id="job-progress-percentage" style="font-weight:700;color:var(--accent-primary);">0%</span>
+        </div>
+        <div style="width:100%;height:8px;background:#e2e8f0;border-radius:4px;overflow:hidden;">
+            <div id="job-progress-bar" style="width:0%;height:100%;background:var(--accent-primary);transition:width 0.3s;"></div>
+        </div>
+    </div>
+
+    <!-- Processing Control Action Bar -->
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px;background:var(--bg-app);border-radius:var(--radius-sm);">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button type="button" class="btn-primary" id="btn-start-job" style="padding:8px 18px;font-weight:600;" onclick="startAutomatedJob()">
+                <i class="bi bi-play-circle-fill"></i> START AUTOMATED MULTI-ANGLE PROCESSING
+            </button>
+            <button type="button" class="btn-secondary" id="btn-pause-job" style="padding:8px 14px;display:none;" onclick="pauseAutomatedJob()">
+                <i class="bi bi-pause-circle"></i> Pause
+            </button>
+            <button type="button" class="btn-primary" id="btn-resume-job" style="padding:8px 14px;display:none;" onclick="resumeAutomatedJob()">
+                <i class="bi bi-play-fill"></i> Resume
+            </button>
+            <button type="button" class="btn-secondary" id="btn-cancel-job" style="padding:8px 14px;color:#ef4444;display:none;" onclick="cancelAutomatedJob()">
+                <i class="bi bi-stop-circle"></i> Cancel
+            </button>
+            <button type="button" class="btn-secondary" id="btn-retry-failed-job" style="padding:8px 14px;display:none;" onclick="retryFailedStops()">
+                <i class="bi bi-arrow-clockwise"></i> Retry Failed
+            </button>
+            <button type="button" class="btn-secondary" id="btn-refresh-workspace" style="padding:8px 14px;color:var(--text-main);" onclick="refreshWorkspace()" title="Reset workspace and clear cached session analysis">
+                <i class="bi bi-arrow-clockwise text-primary"></i> Refresh Workspace
+            </button>
+            <button type="button" class="btn-secondary" id="btn-delete-temp-data" style="padding:8px 14px;color:#ef4444;" onclick="deleteTemporaryData()" title="Purge temporary frames, crops, and demo data from disk and DB">
+                <i class="bi bi-trash3 text-danger"></i> Delete Temp Data
+            </button>
+            <button type="button" class="btn-secondary" id="btn-reset-journey-passengers" style="padding:8px 14px;color:var(--text-muted);" onclick="resetJourneyPassengers()" title="Clean and reset existing passengers to re-process with strict uniqueness and clean timeline">
+                <i class="bi bi-arrow-counterclockwise"></i> Reset Passenger Data
+            </button>
+        </div>
+
+        <div style="display:flex;gap:8px;">
+            <button type="button" class="btn-secondary" style="padding:6px 12px;font-size:12px;" onclick="exportStopReport('pdf')">
+                <i class="bi bi-file-earmark-pdf text-danger"></i> Passenger PDF
+            </button>
+            <button type="button" class="btn-secondary" style="padding:6px 12px;font-size:12px;" onclick="exportStopReport('summary-pdf')">
+                <i class="bi bi-file-earmark-text text-danger"></i> Summary PDF
+            </button>
+            <button type="button" class="btn-secondary" style="padding:6px 12px;font-size:12px;" onclick="exportStopReport('csv')">
+                <i class="bi bi-filetype-csv text-success"></i> Export CSV
+            </button>
+            <button type="button" class="btn-secondary" style="padding:6px 12px;font-size:12px;" onclick="exportStopReport('xlsx')">
+                <i class="bi bi-file-earmark-excel text-primary"></i> Export Excel
+            </button>
+            <button type="button" class="btn-secondary" style="padding:6px 12px;font-size:12px;" onclick="exportStopManifest()">
+                <i class="bi bi-list-check"></i> Manifest
+            </button>
+        </div>
+    </div>
+
+    <!-- Stop-Wise Review Table & Navigation -->
+    <div style="margin-top:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <h4 style="font-size:13px;font-weight:700;color:var(--text-main);margin:0;"><i class="bi bi-table"></i> Timetable Stops & Media Sync Manifest</h4>
+            <div style="display:flex;gap:6px;">
+                <button type="button" class="btn-secondary" style="padding:2px 8px;font-size:11px;" onclick="navigateStop(-1)"><i class="bi bi-chevron-left"></i> Previous Stop</button>
+                <button type="button" class="btn-secondary" style="padding:2px 8px;font-size:11px;" onclick="navigateStop(1)">Next Stop <i class="bi bi-chevron-right"></i></button>
+            </div>
+        </div>
+        <div class="table-responsive" style="max-height:360px;overflow-y:auto;border:1px solid var(--border-color);border-radius:var(--radius-sm);">
+            <table class="custom-table" style="font-size:12px;">
+                <thead>
+                    <tr>
+                        <th>Stop #</th>
+                        <th>Stop Name</th>
+                        <th>Arrival</th>
+                        <th>Departure</th>
+                        <th>Angle A</th>
+                        <th>Angle B</th>
+                        <th>Angle C</th>
+                        <th>Boarded</th>
+                        <th>Continuing</th>
+                        <th>Exited</th>
+                        <th>Occupancy</th>
+                        <th>Coverage</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody id="stops-table-tbody">
+                    <tr><td colspan="11" class="text-center py-4" style="color:var(--text-muted);">Upload a timetable and scan source clip folders to view stop matches.</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Consolidated Multi-Angle Passenger Count Summary -->
+<div id="multi-angle-summary-card" class="card" style="display:none;margin-bottom:24px;">
+    <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">
+        <span><i class="bi bi-calculator-fill text-primary"></i> Consolidated Multi-Angle Passenger Count</span>
+        <span id="summary-provisional-badge" class="badge-status badge-possibly-absent">Provisional Count</span>
+    </div>
+
+    <!-- Stats Matrix Cards -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:14px;margin-bottom:20px;">
+        <div class="stat-card" style="padding:14px;background:var(--bg-app);border-radius:var(--radius-sm);">
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px;">Angle A Detections</div>
+            <div style="font-size:24px;font-weight:700;color:var(--text-main);" id="stat-angle-a-count">0</div>
+            <small style="font-size:11px;color:var(--text-muted);" id="stat-angle-a-sub">0 high, 0 review</small>
+        </div>
+        <div class="stat-card" style="padding:14px;background:var(--bg-app);border-radius:var(--radius-sm);">
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px;">Angle B Detections</div>
+            <div style="font-size:24px;font-weight:700;color:var(--text-main);" id="stat-angle-b-count">0</div>
+            <small style="font-size:11px;color:var(--text-muted);" id="stat-angle-b-sub">0 high, 0 review</small>
+        </div>
+        <div class="stat-card" style="padding:14px;background:var(--bg-app);border-radius:var(--radius-sm);">
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px;">Angle C Detections</div>
+            <div style="font-size:24px;font-weight:700;color:var(--text-main);" id="stat-angle-c-count">0</div>
+            <small style="font-size:11px;color:var(--text-muted);" id="stat-angle-c-sub">0 high, 0 review</small>
+        </div>
+        <div class="stat-card" style="padding:14px;background:var(--bg-app);border-radius:var(--radius-sm);">
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px;">Total Raw Detections</div>
+            <div style="font-size:24px;font-weight:700;color:var(--accent-primary);" id="stat-total-raw">0</div>
+            <small style="font-size:11px;color:var(--text-muted);">Across all camera angles</small>
+        </div>
+        <div class="stat-card" style="padding:14px;background:var(--bg-app);border-radius:var(--radius-sm);">
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px;">Potential Duplicates</div>
+            <div style="font-size:24px;font-weight:700;color:#f59e0b;" id="stat-potential-dups">0</div>
+            <small style="font-size:11px;color:var(--text-muted);">Cross-angle overlap</small>
+        </div>
+        <div class="stat-card" style="padding:14px;background:var(--bg-app);border-radius:var(--radius-sm);">
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px;">Confirmed Unique</div>
+            <div style="font-size:24px;font-weight:700;color:#10b981;" id="stat-confirmed-unique">0</div>
+            <small style="font-size:11px;color:var(--text-muted);">Verified Passenger IDs</small>
+        </div>
+        <div class="stat-card" style="padding:14px;background:var(--bg-app);border-radius:var(--radius-sm);">
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px;">Needs Review</div>
+            <div style="font-size:24px;font-weight:700;color:#ef4444;" id="stat-needs-review">0</div>
+            <small style="font-size:11px;color:var(--text-muted);">Unidentified / low conf</small>
+        </div>
+        <div class="stat-card" style="padding:14px;background:var(--accent-primary-light);border:1px solid var(--accent-primary);border-radius:var(--radius-sm);">
+            <div style="font-size:12px;color:var(--accent-primary);font-weight:600;margin-bottom:4px;">Provisional Unique Count</div>
+            <div style="font-size:26px;font-weight:800;color:var(--text-main);" id="stat-provisional-unique">0</div>
+            <small style="font-size:11px;color:var(--text-muted);">Cautious estimate</small>
+        </div>
+    </div>
+
+    <!-- Analysis Reports Download Actions (CSV & PDF with Face Icons) -->
+    <div style="background:var(--bg-app);border:1px solid var(--border-color);border-radius:var(--radius-sm);padding:14px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-top:10px;">
+        <div style="display:flex;align-items:center;gap:12px;">
+            <div style="width:38px;height:38px;border-radius:8px;background:#eff6ff;display:flex;align-items:center;justify-content:center;color:#2563eb;font-size:20px;">
+                <i class="bi bi-file-earmark-check-fill"></i>
+            </div>
+            <div>
+                <strong style="color:var(--text-main);font-size:14px;display:block;">Passenger Attendance & Analysis Reports</strong>
+                <div style="color:var(--text-muted);font-size:12px;">Export complete detection audit manifest for this journey with passenger face photo crops.</div>
+            </div>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+            <button type="button" class="btn-secondary" onclick="downloadAnalysisReport('csv')" style="padding:8px 16px;font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px;">
+                <i class="bi bi-filetype-csv text-success" style="font-size:16px;"></i> Download CSV Report
+            </button>
+            <button type="button" class="btn-primary" onclick="downloadAnalysisReport('pdf')" style="padding:8px 18px;font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px;background:#dc2626;border-color:#dc2626;">
+                <i class="bi bi-file-earmark-pdf-fill" style="font-size:16px;"></i> Download PDF Report (With Faces)
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- AI Inference Results & Annotated HUD -->
+<div id="upload-results-card" class="card" style="display:none;">
+    <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">
+        <span><i class="bi bi-cpu-fill text-primary"></i> Multi-Angle AI Detection HUD & Passenger Review</span>
+        <!-- Angle Tabs -->
+        <div style="display:flex;gap:8px;">
+            <button type="button" class="btn-primary" id="hud-tab-a" style="padding:5px 14px;font-size:12px;" onclick="switchHudAngleTab('A')">Angle A</button>
+            <button type="button" class="btn-secondary" id="hud-tab-b" style="padding:5px 14px;font-size:12px;" onclick="switchHudAngleTab('B')">Angle B</button>
+            <button type="button" class="btn-secondary" id="hud-tab-c" style="padding:5px 14px;font-size:12px;" onclick="switchHudAngleTab('C')">Angle C</button>
+        </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns: 1.5fr 1fr;gap:24px;">
+        <!-- Annotated Image HUD & Interactive Annotation Tool -->
+        <div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+                <h4 style="font-size:14px;font-weight:600;color:var(--text-main);" id="active-hud-title">Annotated Passenger Detections:</h4>
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <span class="badge-status" id="active-hud-badge" style="font-size:11px;">Angle A</span>
+                    <span id="canvas-mode-badge" class="badge-status" style="background:#e0e7ff;color:#4338ca;font-size:11px;">Mode: View</span>
+                </div>
+            </div>
+
+            <!-- Canvas & Image Overlay Container -->
+            <div class="annotated-preview-container" id="hud-preview-wrapper" style="position:relative;width:100%;min-height:320px;background:#090d16;display:flex;align-items:center;justify-content:center;overflow:hidden;border-radius:var(--radius-sm);border:1px solid var(--border-color);">
+                <div id="canvas-stage" style="position:relative;display:inline-block;max-width:100%;line-height:0;">
+                    <img id="annotated-hud-image" class="annotated-preview-img" src="#" alt="HUD Annotated Bus Interior" style="display:none;width:100%;max-width:100%;height:auto;border-radius:var(--radius-sm);user-select:none;-webkit-user-drag:none;">
+                    <canvas id="annotation-canvas" style="position:absolute;top:0;left:0;width:100%;height:100%;display:none;z-index:10;touch-action:none;"></canvas>
+                </div>
+                <div id="hud-placeholder" style="color:#64748b;font-size:13px;text-align:center;padding:40px;">
+                    <i class="bi bi-image" style="font-size:32px;display:block;margin-bottom:8px;"></i>
+                    Select an angle above to inspect its annotated HUD detection
+                </div>
+            </div>
+
+            <!-- Manual Annotation Toolbar -->
+            <div id="annotation-toolbar" style="display:none;margin-top:12px;padding:10px 14px;background:var(--bg-app);border-radius:var(--radius-sm);border:1px solid var(--border-color);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                    <span style="font-size:12px;font-weight:700;color:var(--text-main);"><i class="bi bi-tools text-primary"></i> Manual Correction:</span>
+                    <button type="button" class="btn-primary" id="btn-tool-draw" onclick="setAnnotationTool('draw')" style="padding:5px 12px;font-size:12px;">
+                        <i class="bi bi-bounding-box-cross"></i> Draw Box
+                    </button>
+                    <button type="button" class="btn-secondary" id="btn-tool-select" onclick="setAnnotationTool('select')" style="padding:5px 12px;font-size:12px;">
+                        <i class="bi bi-cursor-fill"></i> Select / Edit
+                    </button>
+                    <button type="button" class="btn-secondary" id="btn-tool-delete" onclick="deleteSelectedBox()" style="padding:5px 12px;font-size:12px;color:#ef4444;" title="Delete selected box">
+                        <i class="bi bi-trash-fill"></i> Delete Box
+                    </button>
+                    <button type="button" class="btn-secondary" onclick="clearUnsavedManualBoxes()" style="padding:5px 12px;font-size:12px;" title="Discard unsaved boxes">
+                        <i class="bi bi-arrow-counterclockwise"></i> Reset
+                    </button>
+                </div>
+
+                <div style="display:flex;align-items:center;gap:12px;">
+                    <span id="annotation-hint-text" style="font-size:11px;color:var(--text-muted);">Click "Draw Box" then drag on undetected passengers</span>
+                    <button type="button" class="btn-primary" id="btn-tool-save" onclick="saveManualCorrections()" style="padding:6px 18px;font-size:12px;background:#10b981;border-color:#10b981;color:#fff;font-weight:600;">
+                        <i class="bi bi-check-circle-fill"></i> Save Correction
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Detected Passengers List for Active Angle -->
+        <div>
+            <h4 style="font-size:14px;font-weight:600;margin-bottom:10px;color:var(--text-main);">
+                Detections in <span id="active-table-angle-name">Angle A</span>:
+            </h4>
+            <div class="table-responsive" style="max-height:480px;overflow-y:auto;">
+                <table class="custom-table">
+                    <thead>
+                        <tr>
+                            <th>Crop</th>
+                            <th>ID / Temp</th>
+                            <th>Confidence</th>
+                            <th>Status</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="detected-passengers-tbody">
+                        <tr><td colspan="5" class="text-center py-4" style="color:var(--text-muted)">No detections loaded.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Seating Area Configuration Modal -->
+<div class="modal-overlay" id="seating-config-modal" onclick="if(event.target === this) closeSeatingConfigModal()">
+    <div class="modal-box" style="max-width:560px;">
+        <div class="modal-header">
+            <h3 class="modal-title"><i class="bi bi-gear-fill text-primary"></i> Seating Area Configuration</h3>
+            <button class="modal-close-btn" onclick="closeSeatingConfigModal()">&times;</button>
+        </div>
+        <form onsubmit="handleSeatingConfigSave(event)" style="padding-top:14px;">
+            <div class="form-group">
+                <label class="form-label" for="sc-angle-select">Camera Angle to Configure *</label>
+                <select id="sc-angle-select" class="form-select" onchange="loadSelectedAngleConfigForm(this.value)">
+                    <option value="A">Angle A (Front Section)</option>
+                    <option value="B">Angle B (Middle Section)</option>
+                    <option value="C">Angle C (Rear Section)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="sc-title">Angle Title</label>
+                <input type="text" id="sc-title" class="form-control" placeholder="e.g. Angle A — Front / Assigned Seating Section" required>
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="sc-label">Seating Area Label</label>
+                <input type="text" id="sc-label" class="form-control" placeholder="e.g. Front Section (Rows 1-2 / Seats 1A-2D)" required>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                <div class="form-group">
+                    <label class="form-label" for="sc-target-seats">Target Seat Positions</label>
+                    <input type="text" id="sc-target-seats" class="form-control" placeholder="e.g. 1A, 1B, 1C, 1D">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="sc-target-capacity">Target Coverage (Seats)</label>
+                    <input type="number" id="sc-target-capacity" class="form-control" value="4" min="1" max="60">
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Region of Interest (ROI Normalized Coords)</label>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px;">
+                    <div>X-Min: <input type="number" step="0.05" min="0" max="1" id="sc-roi-xmin" class="form-control" value="0.0"></div>
+                    <div>Y-Min: <input type="number" step="0.05" min="0" max="1" id="sc-roi-ymin" class="form-control" value="0.0"></div>
+                    <div>X-Max: <input type="number" step="0.05" min="0" max="1" id="sc-roi-xmax" class="form-control" value="1.0"></div>
+                    <div>Y-Max: <input type="number" step="0.05" min="0" max="1" id="sc-roi-ymax" class="form-control" value="1.0"></div>
+                </div>
+            </div>
+            <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:20px;">
+                <button type="button" class="btn-secondary" onclick="closeSeatingConfigModal()">Cancel</button>
+                <button type="submit" class="btn-primary">
+                    <i class="bi bi-check2-circle"></i> Save Configuration
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Operator Detection Review Modal -->
+<div class="modal-overlay" id="detection-review-modal" onclick="if(event.target === this) closeDetectionReviewModal()">
+    <div class="modal-box" style="max-width:480px;">
+        <div class="modal-header">
+            <h3 class="modal-title"><i class="bi bi-shield-check text-primary"></i> Review Passenger Detection</h3>
+            <button class="modal-close-btn" onclick="closeDetectionReviewModal()">&times;</button>
+        </div>
+        <form onsubmit="handleDetectionReviewSubmit(event)" style="padding-top:14px;">
+            <input type="hidden" id="drm-obs-id">
+            <div style="display:flex;gap:14px;align-items:center;margin-bottom:16px;">
+                <img id="drm-crop-img" src="#" alt="Crop" style="width:64px;height:64px;border-radius:var(--radius-sm);object-fit:cover;border:1px solid var(--border-color);">
+                <div>
+                    <h4 style="font-size:15px;font-weight:700;margin-bottom:2px;" id="drm-label">Detection #</h4>
+                    <span class="badge-status" id="drm-status-badge">Needs Review</span>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="drm-action-select">Review Action *</label>
+                <select id="drm-action-select" class="form-select" onchange="toggleLinkPassengerField(this.value)">
+                    <option value="CONFIRM">Confirm Passenger Detection</option>
+                    <option value="LINK_PASSENGER">Link Detection to Existing Passenger ID</option>
+                    <option value="FALSE_POSITIVE">Mark as False Positive (Non-Passenger / Object)</option>
+                    <option value="REQUEST_REVIEW">Flag for Supervisor Manual Review</option>
+                </select>
+            </div>
+            <div class="form-group" id="drm-link-container" style="display:none;">
+                <label class="form-label" for="drm-target-id">Target Person ID (e.g. P001, P002)</label>
+                <input type="text" id="drm-target-id" class="form-control" placeholder="e.g. P001">
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="drm-comment">Audit Notes / Comments</label>
+                <textarea id="drm-comment" class="form-control" rows="2" placeholder="Reason for correction or confirmation..."></textarea>
+            </div>
+            <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:20px;">
+                <button type="button" class="btn-secondary" onclick="closeDetectionReviewModal()">Cancel</button>
+                <button type="submit" class="btn-primary">
+                    <i class="bi bi-check2-circle"></i> Submit Review
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Quick New Journey Modal -->
+<div class="modal-overlay" id="quick-journey-modal" onclick="if(event.target === this) closeQuickNewJourneyModal()">
+    <div class="modal-box" style="max-width:480px;">
+        <div class="modal-header">
+            <h3 class="modal-title"><i class="bi bi-signpost-split-fill text-primary"></i> Launch New Journey</h3>
+            <button class="modal-close-btn" onclick="closeQuickNewJourneyModal()">&times;</button>
+        </div>
+        <form onsubmit="handleQuickJourneySubmit(event)" style="padding-top:14px;">
+            <div class="form-group">
+                <label class="form-label" for="qj-bus-select">Select Bus *</label>
+                <select id="qj-bus-select" class="form-select" required></select>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                <div class="form-group">
+                    <label class="form-label" for="qj-origin">Origin / Starting *</label>
+                    <input type="text" id="qj-origin" class="form-control" placeholder="e.g. Civic Center" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="qj-destination">Destination *</label>
+                    <input type="text" id="qj-destination" class="form-control" placeholder="e.g. Airport Terminal" required>
+                </div>
+            </div>
+            <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:20px;">
+                <button type="button" class="btn-secondary" onclick="closeQuickNewJourneyModal()">Cancel</button>
+                <button type="submit" class="btn-primary">
+                    <i class="bi bi-play-circle-fill"></i> Launch & Select
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/upload.js') }}?v=4.0"></script>
+{% endblock %}
