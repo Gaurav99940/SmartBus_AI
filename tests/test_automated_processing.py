@@ -388,6 +388,29 @@ class TestAutomatedProcessing(unittest.TestCase):
             manifest = generate_processing_manifest_csv(tt.id)
             self.assertIn("MEDIA PROCESSING MANIFEST", manifest)
 
+    def test_08_upload_browser_folder_endpoint(self):
+        """Test uploading a browser-attached folder of clips/photos to the server."""
+        with self.app.test_client() as client:
+            with self.app.app_context():
+                img = Image.new("RGB", (320, 240), color=(100, 150, 200))
+                buf = io.BytesIO()
+                img.save(buf, format="JPEG")
+                buf.seek(0)
+
+                data = {
+                    "camera_angle": "A",
+                    "folder_name": "TestBrowserFolder",
+                    "journey_id": self.journey_id,
+                    "files": [(buf, "20261014120000_clip1.jpg")]
+                }
+
+                res = client.post("/api/automated/upload-browser-folder", data=data, content_type="multipart/form-data")
+                self.assertEqual(res.status_code, 200)
+                json_data = res.get_json()
+                self.assertTrue(json_data["success"])
+                self.assertEqual(json_data["images_count"], 1)
+                self.assertEqual(json_data["folder"]["folder_name"], "angle_A_TestBrowserFolder")
+
 
 if __name__ == "__main__":
     unittest.main()

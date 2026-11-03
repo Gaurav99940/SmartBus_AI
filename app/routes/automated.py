@@ -192,6 +192,146 @@ def get_folder_manifest(folder_id):
     return jsonify({"success": True, "folder": folder.to_dict(), "files": files})
 
 
+@automated_bp.route("/upload-browser-folder", methods=["POST"])
+def upload_browser_folder_endpoint():
+    """
+    Accepts files attached via the browser folder picker or drag-and-drop,
+    saves them into a managed server folder, and indexes them as a SourceFolder & SourceMediaFiles.
+    """
+    camera_angle = (request.form.get("camera_angle") or "A").upper()
+    raw_folder_name = request.form.get("folder_name") or f"Folder_Angle_{camera_angle}"
+    clean_folder_name = secure_filename(raw_folder_name) or f"Folder_Angle_{camera_angle}"
+    journey_id_raw = request.form.get("journey_id")
+    timetable_id_raw = request.form.get("timetable_id")
+
+    journey_id = None
+    if journey_id_raw and str(journey_id_raw).lower() not in ("auto_create", "null", "undefined", ""):
+        try:
+            journey_id = int(journey_id_raw)
+        except Exception:
+            journey_id = None
+
+    if not journey_id:
+        active_j = Journey.query.filter_by(status="in_progress").first() or Journey.query.order_by(Journey.id.desc()).first()
+        if active_j:
+            journey_id = active_j.id
+
+    uploaded_files = request.files.getlist("files") or request.files.getlist("files[]")
+    if not uploaded_files:
+        return jsonify({"success": False, "error": "No files provided in folder upload."}), 400
+
+    # Destination directory on server
+    dest_dir = Config.UPLOAD_FOLDER / "browser_folders" / f"angle_{camera_angle}_{clean_folder_name}"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    saved_count = 0
+    for f in uploaded_files:
+        if not f or not f.filename:
+            continue
+        clean_name = secure_filename(os.path.basename(f.filename))
+        if not clean_name:
+            continue
+        ext = clean_name.rsplit(".", 1)[-1].lower() if "." in clean_name else ""
+        if ext in Config.ALLOWED_EXTENSIONS:
+            dest_file = dest_dir / clean_name
+            f.save(str(dest_file))
+            saved_count += 1
+
+    if saved_count == 0:
+        return jsonify({"success": False, "error": "No supported video clips or images found in uploaded folder."}), 400
+
+    base_date = None
+    if timetable_id_raw:
+        try:
+            t_obj = TimetableImport.query.get(int(timetable_id_raw))
+            if t_obj and t_obj.service_date:
+                base_date = t_obj.service_date
+        except Exception:
+            pass
+    if not base_date:
+        latest_tt = TimetableImport.query.order_by(TimetableImport.id.desc()).first()
+        if latest_tt and latest_tt.service_date:
+            base_date = latest_tt.service_date
+
+    scan_res = scan_directory(str(dest_dir.resolve()), base_date=base_date)
+    if not scan_res["success"]:
+        return jsonify(scan_res), 400
+
+    s_folder = SourceFolder.query.filter_by(
+        folder_path=scan_res["folder_path"],
+        camera_angle=camera_angle
+    ).first()
+
+    if not s_folder:
+        s_folder = SourceFolder(
+            journey_id=journey_id,
+            camera_angle=camera_angle,
+            folder_path=scan_res["folder_path"],
+            folder_name=scan_res["folder_name"],
+            clips_count=scan_res["clips_count"],
+            images_count=scan_res["images_count"],
+            status="ready",
+            last_scanned_at=datetime.utcnow()
+        )
+        db.session.add(s_folder)
+        db.session.flush()
+    else:
+        s_folder.clips_count = scan_res["clips_count"]
+        s_folder.images_count = scan_res["images_count"]
+        s_folder.last_scanned_at = datetime.utcnow()
+        s_folder.status = "ready"
+        if journey_id:
+            s_folder.journey_id = journey_id
+
+    existing_files = {mf.file_path: mf for mf in s_folder.media_files}
+    for file_info in scan_res["files"]:
+        f_path = file_info["file_path"]
+        if f_path in existing_files:
+            mf = existing_files[f_path]
+            mf.start_time = file_info["start_time"]
+            mf.end_time = file_info["end_time"]
+            mf.duration_seconds = file_info["duration_seconds"]
+            mf.fps = file_info["fps"]
+            mf.total_frames = file_info["total_frames"]
+            mf.file_size = file_info["file_size"]
+            mf.is_timestamp_reliable = file_info["is_timestamp_reliable"]
+            mf.timestamp_source = file_info["timestamp_source"]
+        else:
+            mf = SourceMediaFile(
+                source_folder_id=s_folder.id,
+                journey_id=journey_id,
+                camera_angle=camera_angle,
+                file_path=f_path,
+                filename=file_info["filename"],
+                file_ext=file_info["file_ext"],
+                media_type=file_info["media_type"],
+                file_size=file_info["file_size"],
+                file_hash=file_info["file_hash"],
+                start_time=file_info["start_time"],
+                end_time=file_info["end_time"],
+                duration_seconds=file_info["duration_seconds"],
+                fps=file_info["fps"],
+                total_frames=file_info["total_frames"],
+                width=file_info["width"],
+                height=file_info["height"],
+                timestamp_source=file_info["timestamp_source"],
+                is_timestamp_reliable=file_info["is_timestamp_reliable"],
+                status="ready"
+            )
+            db.session.add(mf)
+
+    db.session.commit()
+
+    return jsonify({
+        "success": True,
+        "folder": s_folder.to_dict(),
+        "files_count": len(scan_res["files"]),
+        "clips_count": scan_res["clips_count"],
+        "images_count": scan_res["images_count"],
+        "files": [f for f in scan_res["files"][:50]]
+    })
+
+
 # ============================================================================
 # 2. TIMETABLE IMPORT & VALIDATION
 # ============================================================================

@@ -233,40 +233,223 @@ function onStopSelectChange(stopId) {
 // ----------------------------------------------------------------------------
 // Multi-Angle Dropzone Setup & File Handlers
 // ----------------------------------------------------------------------------
+// Drag-and-Drop & File/Folder Extraction Helpers
+// ----------------------------------------------------------------------------
+
+// Prevent default browser drag/drop behavior on the whole window so dragging files/folders never navigates the tab
+window.addEventListener("dragover", (e) => {
+    e.preventDefault();
+}, false);
+
+window.addEventListener("drop", (e) => {
+    e.preventDefault();
+}, false);
+
+async function extractFilesFromDataTransfer(dataTransfer) {
+    if (!dataTransfer) return { files: [], folderName: null, isFolder: false };
+
+    let isFolder = false;
+    let folderName = null;
+    const extractedFiles = [];
+
+    // Helper to read all entries from a DirectoryReader safely without breaking Chrome's stream
+    async function readAllEntriesFromReader(reader) {
+        const entries = [];
+        while (true) {
+            const batch = await new Promise((resolve, reject) => {
+                reader.readEntries(resolve, () => resolve([]));
+            });
+            if (!batch || batch.length === 0) break;
+            entries.push(...batch);
+        }
+        return entries;
+    }
+
+    // Helper to recursively traverse items via webkitGetAsEntry
+    async function traverseEntry(entry, currentPath = "") {
+        if (entry.isFile) {
+            return new Promise((resolve) => {
+                entry.file(f => {
+                    try {
+                        Object.defineProperty(f, 'folderRelativePath', {
+                            value: currentPath ? `${currentPath}/${f.name}` : f.name,
+                            writable: true
+                        });
+                    } catch (e) {}
+                    resolve([f]);
+                }, () => resolve([]));
+            });
+        } else if (entry.isDirectory) {
+            isFolder = true;
+            if (!folderName) folderName = entry.name;
+            const dirReader = entry.createReader();
+            const dirEntries = await readAllEntriesFromReader(dirReader);
+            const dirPath = currentPath ? `${currentPath}/${entry.name}` : entry.name;
+            const subResults = await Promise.all(dirEntries.map(e => traverseEntry(e, dirPath)));
+            return subResults.flat();
+        }
+        return [];
+    }
+
+    try {
+        if (dataTransfer.items && dataTransfer.items.length > 0) {
+            let hasDirectory = false;
+            const entryPromises = [];
+            for (let i = 0; i < dataTransfer.items.length; i++) {
+                const item = dataTransfer.items[i];
+                if (item.kind === 'file') {
+                    if (typeof item.webkitGetAsEntry === "function") {
+                        const entry = item.webkitGetAsEntry();
+                        if (entry) {
+                            if (entry.isDirectory) hasDirectory = true;
+                            entryPromises.push(traverseEntry(entry));
+                        }
+                    }
+                }
+            }
+
+            if (entryPromises.length > 0) {
+                const results = await Promise.all(entryPromises);
+                results.forEach(arr => extractedFiles.push(...arr));
+                if (extractedFiles.length > 0 && (hasDirectory || extractedFiles.length > 1)) {
+                    return {
+                        files: extractedFiles,
+                        folderName: folderName || "Dropped Folder",
+                        isFolder: true
+                    };
+                }
+            }
+        }
+    } catch (e) {
+        console.warn("Folder traversal notice:", e);
+    }
+
+    // Fallback: standard DataTransfer.files
+    const rawFiles = Array.from(dataTransfer.files || []);
+    if (rawFiles.length > 0) {
+        let fName = null;
+        if (rawFiles[0].webkitRelativePath) {
+            fName = rawFiles[0].webkitRelativePath.split('/')[0];
+        }
+        return {
+            files: rawFiles,
+            folderName: fName || (rawFiles.length > 1 ? "Attached Clips" : null),
+            isFolder: rawFiles.length > 1 || !!fName
+        };
+    }
+    return { files: [], folderName: null, isFolder: false };
+}
+
+function handleAngleFileInputChange(angle, fileList) {
+    if (!fileList || fileList.length === 0) return;
+    if (fileList.length === 1) {
+        handleAngleFileSelected(angle, fileList[0], false);
+    } else {
+        handleBrowserFolderSelected(angle, fileList, `Selected Clips (${fileList.length} files)`);
+    }
+}
 
 function setupAngleDropzones() {
     ["A", "B", "C"].forEach(angle => {
         const lower = angle.toLowerCase();
         const dropzone = document.getElementById(`dropzone-${lower}`);
+        const folderBox = document.getElementById(`folder-box-${lower}`);
+        const card = document.getElementById(`card-angle-${lower}`);
         const fileInput = document.getElementById(`file-input-${lower}`);
+        const folderInput = document.getElementById(`folder-input-${lower}`);
+
         if (!dropzone || !fileInput) return;
 
-        dropzone.addEventListener("click", () => fileInput.click());
-
-        dropzone.addEventListener("dragover", (e) => {
-            e.preventDefault();
-            dropzone.classList.add("dragover");
-        });
-
-        dropzone.addEventListener("dragleave", () => {
-            dropzone.classList.remove("dragover");
-        });
-
-        dropzone.addEventListener("drop", (e) => {
-            e.preventDefault();
-            dropzone.classList.remove("dragover");
-            if (e.dataTransfer.files.length > 0) {
-                handleAngleFileSelected(angle, e.dataTransfer.files[0]);
+        // Clicking on dropzone background opens file selector if clicked outside buttons
+        dropzone.addEventListener("click", (e) => {
+            if (e.target.tagName !== "BUTTON" && !e.target.closest("button")) {
+                fileInput.click();
             }
+        });
+
+        // Ensure change events fire consistently
+        if (folderInput) {
+            folderInput.addEventListener("change", function () {
+                if (this.files && this.files.length > 0) {
+                    handleBrowserFolderSelected(angle, this.files);
+                }
+            });
+        }
+
+        // Attach drag & drop handling to dropzone, folder box, and entire card
+        const dropTargets = [dropzone, folderBox, card].filter(Boolean);
+        dropTargets.forEach(targetEl => {
+            targetEl.addEventListener("dragenter", (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (card) card.style.borderColor = "var(--accent-primary)";
+                if (dropzone) dropzone.classList.add("dragover");
+            });
+
+            targetEl.addEventListener("dragover", (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (card) card.style.borderColor = "var(--accent-primary)";
+                if (dropzone) dropzone.classList.add("dragover");
+            });
+
+            targetEl.addEventListener("dragleave", (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                // Only remove if leaving the element completely
+                if (!targetEl.contains(e.relatedTarget)) {
+                    if (dropzone) dropzone.classList.remove("dragover");
+                    if (card && !selectedAngleFiles[angle]) card.style.borderColor = "transparent";
+                }
+            });
+
+            targetEl.addEventListener("drop", async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (dropzone) dropzone.classList.remove("dragover");
+                if (card) card.style.borderColor = "var(--accent-primary)";
+
+                const extracted = await extractFilesFromDataTransfer(e.dataTransfer);
+                if (extracted.files && extracted.files.length > 0) {
+                    if (extracted.isFolder || extracted.files.length > 1) {
+                        await handleBrowserFolderSelected(angle, extracted.files, extracted.folderName);
+                    } else {
+                        await handleAngleFileSelected(angle, extracted.files[0], false);
+                    }
+                }
+            });
         });
     });
 }
 
-async function handleAngleFileSelected(angle, file) {
+async function handleAngleFileSelected(angle, file, isFromFolder = false) {
     if (!file) return;
 
     selectedAngleFiles[angle] = file;
     const lower = angle.toLowerCase();
+
+    // If attaching a single file directly (not via folder picker), also update the folder box to reflect this single clip!
+    if (!isFromFolder) {
+        const statusBadge = document.getElementById(`folder-status-${lower}`);
+        const pathDisplay = document.getElementById(`folder-path-display-${lower}`);
+        const clipsCountEl = document.getElementById(`folder-clips-count-${lower}`);
+        const imagesCountEl = document.getElementById(`folder-images-count-${lower}`);
+        const clipPickerWrap = document.getElementById(`folder-clip-picker-wrap-${lower}`);
+        
+        const isVid = file.type.startsWith("video/") || /\.(mp4|avi|mov|mkv|webm|m4v|ts|flv|3gp|dav)$/i.test(file.name);
+        if (statusBadge) {
+            statusBadge.textContent = isVid ? "1 Clip Ready" : "1 Image Ready";
+            statusBadge.className = "badge-status badge-present";
+            statusBadge.style.background = "#dbeafe";
+            statusBadge.style.color = "#1d4ed8";
+        }
+        if (pathDisplay) {
+            pathDisplay.innerHTML = `File: <strong style="color:var(--accent-primary);"><i class="bi bi-file-earmark-play"></i> ${file.name}</strong> <span class="badge-status badge-present" style="font-size:10px;padding:2px 6px;">Single Media</span>`;
+        }
+        if (clipsCountEl) clipsCountEl.textContent = isVid ? "1" : "0";
+        if (imagesCountEl) imagesCountEl.textContent = isVid ? "0" : "1";
+        if (clipPickerWrap) clipPickerWrap.style.display = "none";
+    }
 
     // Show preview (detect whether video or image)
     const previewContainer = document.getElementById(`preview-container-${lower}`);
@@ -276,7 +459,7 @@ async function handleAngleFileSelected(angle, file) {
     const statusBadge = document.getElementById(`status-badge-${lower}`);
     const card = document.getElementById(`card-angle-${lower}`);
 
-    const isVideo = file.type.startsWith("video/") || /\.(mp4|avi|mov|mkv|webm|m4v)$/i.test(file.name);
+    const isVideo = file.type.startsWith("video/") || /\.(mp4|avi|mov|mkv|webm|m4v|ts|flv|3gp|dav)$/i.test(file.name);
 
     if (previewContainer && prompt) {
         if (isVideo && previewVideo) {
@@ -549,11 +732,27 @@ async function submitMultiAnglePhotos() {
             renderConsolidatedSummary(data);
             showToast(`Multi-angle analysis completed! Processed ${selectedKeys.length} angles.`, "success");
         } else {
+            selectedKeys.forEach(angle => {
+                const lower = angle.toLowerCase();
+                const badge = document.getElementById(`status-badge-${lower}`);
+                if (badge && badge.textContent === "Processing...") {
+                    badge.textContent = "Failed";
+                    badge.className = "badge-status badge-needs-review";
+                }
+            });
             showToast(data.error || "Failed to process multi-angle upload.", "error");
         }
     } catch (err) {
         submitBtn.disabled = false;
         submitBtn.innerHTML = `<i class="bi bi-cloud-arrow-up-fill"></i> Upload & Process Bus Angles`;
+        selectedKeys.forEach(angle => {
+            const lower = angle.toLowerCase();
+            const badge = document.getElementById(`status-badge-${lower}`);
+            if (badge && badge.textContent === "Processing...") {
+                badge.textContent = "Ready";
+                badge.className = "badge-status badge-present";
+            }
+        });
         showToast("Network error uploading multi-angle photos.", "error");
         console.error(err);
     }
@@ -622,6 +821,15 @@ function renderConsolidatedSummary(data) {
                 if (detCountEl) detCountEl.textContent = aSum.detected;
                 if (uncCountEl) uncCountEl.textContent = aSum.uncertain;
                 if (errBox) errBox.style.display = "none";
+            } else if (aSum.status === "SKIPPED_BLACK_AND_WHITE") {
+                if (statusBadge) {
+                    statusBadge.textContent = "Skipped (B&W)";
+                    statusBadge.className = "badge-status badge-needs-review";
+                }
+                if (errBox) {
+                    errBox.textContent = aSum.skip_reason || "Black-and-white / grayscale footage skipped before AI inference.";
+                    errBox.style.display = "block";
+                }
             } else if (aSum.status === "failed") {
                 if (statusBadge) {
                     statusBadge.textContent = "Failed";
@@ -1537,35 +1745,125 @@ let jobPollInterval = null;
 let currentStopsList = [];
 let activeStopNavIndex = 0;
 
-// Native/Local Folder Selection
-async function selectFolderDialog(angle) {
+// Browser Folder Attachment State
+const browserAttachedFolders = { A: null, B: null, C: null };
+
+// Browser & Native Folder Selection
+function selectFolderDialog(angle) {
     const lower = angle.toLowerCase();
+    const folderInput = document.getElementById(`folder-input-${lower}`);
     const errBox = document.getElementById(`folder-error-${lower}`);
     if (errBox) errBox.style.display = "none";
 
-    try {
-        // Try backend native Windows folder picker
-        const res = await fetch("/api/automated/pick-native-folder", { method: "POST" });
-        if (res.ok) {
-            const data = await res.json();
-            if (data.success && data.folder_path) {
-                selectedFolderPaths[angle] = data.folder_path;
-                await scanFolder(angle, data.folder_path);
-                return;
-            } else if (data.cancelled) {
-                return;
-            }
+    if (folderInput) {
+        folderInput.value = "";
+        folderInput.click();
+    }
+}
+
+async function handleBrowserFolderSelected(angle, fileList, customFolderName = null) {
+    if (!fileList || fileList.length === 0) return;
+    const lower = angle.toLowerCase();
+    const files = Array.from(fileList);
+
+    // Identify folder name
+    let folderName = customFolderName;
+    if (!folderName) {
+        if (files[0].webkitRelativePath) {
+            folderName = files[0].webkitRelativePath.split("/")[0];
+        } else if (files[0].folderRelativePath) {
+            folderName = files[0].folderRelativePath.split("/")[0];
+        } else {
+            folderName = `Folder_Angle_${angle}`;
         }
-    } catch (e) {
-        console.warn("Native folder picker unavailable:", e);
     }
 
-    // Fallback: prompt operator for local directory path
-    const pathInput = prompt(`Enter local Windows directory path for Angle ${angle} clips (e.g. D:\\SmartBus\\Journey01\\Angle_${angle}):`, selectedFolderPaths[angle] || "");
-    if (pathInput && pathInput.trim()) {
-        selectedFolderPaths[angle] = pathInput.trim();
-        await scanFolder(angle, pathInput.trim());
+    const videoExts = [
+        ".mp4", ".avi", ".mov", ".mkv", ".wmv", ".webm", ".m4v",
+        ".ts", ".flv", ".3gp", ".dav", ".asf", ".mpg", ".mpeg", ".m2ts"
+    ];
+    const imageExts = [
+        ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff", ".tif", ".jfif", ".gif"
+    ];
+
+    const isVideo = (f) => (f.type && f.type.startsWith("video/")) || videoExts.some(ext => f.name.toLowerCase().endsWith(ext));
+    const isImage = (f) => (f.type && f.type.startsWith("image/")) || imageExts.some(ext => f.name.toLowerCase().endsWith(ext));
+
+    let clips = files.filter(isVideo).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+    let images = files.filter(isImage).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+
+    // Fallback: If no files matched known extensions, treat all files as clips
+    if (clips.length === 0 && images.length === 0 && files.length > 0) {
+        clips = files.slice();
     }
+
+    if (clips.length === 0 && images.length === 0) {
+        showToast(`No media clips or images found in "${folderName}".`, "warning");
+        return;
+    }
+
+    browserAttachedFolders[angle] = {
+        folderName: folderName,
+        clips: clips,
+        images: images,
+        allFiles: [...clips, ...images],
+        synced: false
+    };
+
+    // Calculate total size
+    const totalBytes = [...clips, ...images].reduce((sum, f) => sum + (f.size || 0), 0);
+    const sizeStr = (totalBytes / (1024 * 1024)).toFixed(1);
+
+    // Update Folder Box UI
+    const statusBadge = document.getElementById(`folder-status-${lower}`);
+    const pathDisplay = document.getElementById(`folder-path-display-${lower}`);
+    const clipsCountEl = document.getElementById(`folder-clips-count-${lower}`);
+    const imagesCountEl = document.getElementById(`folder-images-count-${lower}`);
+    const errBox = document.getElementById(`folder-error-${lower}`);
+
+    if (errBox) errBox.style.display = "none";
+    if (statusBadge) {
+        statusBadge.textContent = `${clips.length} Clips, ${images.length} Imgs (${sizeStr} MB)`;
+        statusBadge.className = "badge-status badge-present";
+        statusBadge.style.background = "#dcfce7";
+        statusBadge.style.color = "#15803d";
+    }
+    if (pathDisplay) {
+        pathDisplay.innerHTML = `Folder: <strong style="color:var(--accent-primary);"><i class="bi bi-folder-check"></i> ${folderName}</strong> <span class="badge-status badge-present" style="font-size:10px;padding:2px 6px;">Browser Attached</span>`;
+    }
+    if (clipsCountEl) clipsCountEl.textContent = clips.length;
+    if (imagesCountEl) imagesCountEl.textContent = images.length;
+
+    // Show and populate clip picker if clips available
+    const clipPickerWrap = document.getElementById(`folder-clip-picker-wrap-${lower}`);
+    const clipSelect = document.getElementById(`folder-clip-select-${lower}`);
+    if (clipSelect && clips.length > 0) {
+        clipSelect.innerHTML = "";
+        clips.forEach((clip, idx) => {
+            const opt = document.createElement("option");
+            opt.value = idx;
+            const mb = (clip.size / (1024 * 1024)).toFixed(1);
+            opt.textContent = `Clip ${idx + 1}: ${clip.name} (${mb} MB)`;
+            clipSelect.appendChild(opt);
+        });
+        if (clipPickerWrap) clipPickerWrap.style.display = "block";
+    } else if (clipPickerWrap) {
+        clipPickerWrap.style.display = "none";
+    }
+
+    // Automatically load primary file into the angle dropzone & preview
+    const primaryFile = clips.length > 0 ? clips[0] : images[0];
+    await handleAngleFileSelected(angle, primaryFile, true);
+
+    showToast(`Attached full folder "${folderName}" (${clips.length} clips, ${images.length} images) to Angle ${angle}!`, "success");
+}
+
+function switchFolderActiveClip(angle, clipIndex) {
+    const folderData = browserAttachedFolders[angle];
+    if (!folderData || !folderData.clips || !folderData.clips[clipIndex]) return;
+    const chosenFile = folderData.clips[clipIndex];
+    handleAngleFileSelected(angle, chosenFile);
+    showToast(`Switched Angle ${angle} active clip to: ${chosenFile.name}`, "info");
 }
 
 async function scanFolder(angle, folderPath) {
@@ -1626,8 +1924,63 @@ async function scanFolder(angle, folderPath) {
     }
 }
 
-function rescanFolder(angle) {
-    if (selectedFolderPaths[angle]) {
+async function rescanFolder(angle) {
+    const lower = angle.toLowerCase();
+    const folderData = browserAttachedFolders[angle];
+    const errBox = document.getElementById(`folder-error-${lower}`);
+    const statusBadge = document.getElementById(`folder-status-${lower}`);
+
+    if (folderData && folderData.allFiles && folderData.allFiles.length > 0) {
+        // Sync browser folder files to server for automated timetable processing
+        if (statusBadge) {
+            statusBadge.textContent = "Syncing...";
+            statusBadge.className = "badge-status badge-possibly-absent";
+        }
+        try {
+            const formData = new FormData();
+            formData.append("camera_angle", angle);
+            formData.append("folder_name", folderData.folderName);
+            const journeySelect = document.getElementById("journey-select");
+            const journeyId = journeySelect ? journeySelect.value : null;
+            if (journeyId && journeyId !== "auto_create") formData.append("journey_id", journeyId);
+            if (currentTimetableId) formData.append("timetable_id", currentTimetableId);
+
+            folderData.allFiles.forEach(f => {
+                formData.append("files", f);
+            });
+
+            const res = await fetch("/api/automated/upload-browser-folder", {
+                method: "POST",
+                body: formData
+            });
+
+            const data = await res.json();
+            if (res.ok && data.success) {
+                folderData.synced = true;
+                selectedFolderPaths[angle] = data.folder.folder_path;
+                if (statusBadge) {
+                    statusBadge.textContent = `${data.clips_count} Clips (Synced)`;
+                    statusBadge.className = "badge-status badge-present";
+                }
+                showToast(`Folder "${folderData.folderName}" successfully synced to server (${data.clips_count} clips ready for stop matching).`, "success");
+            } else {
+                if (statusBadge) {
+                    statusBadge.textContent = `${folderData.clips.length} Clips (Local)`;
+                    statusBadge.className = "badge-status badge-present";
+                }
+                if (errBox) {
+                    errBox.textContent = data.error || "Failed to sync folder to server.";
+                    errBox.style.display = "block";
+                }
+            }
+        } catch (e) {
+            console.error("Folder sync error:", e);
+            if (statusBadge) {
+                statusBadge.textContent = `${folderData.clips.length} Clips (Local)`;
+                statusBadge.className = "badge-status badge-present";
+            }
+        }
+    } else if (selectedFolderPaths[angle]) {
         scanFolder(angle, selectedFolderPaths[angle]);
     } else {
         selectFolderDialog(angle);
@@ -1636,13 +1989,18 @@ function rescanFolder(angle) {
 
 function clearFolderSelection(angle) {
     selectedFolderPaths[angle] = null;
+    browserAttachedFolders[angle] = null;
     const lower = angle.toLowerCase();
     const statusBadge = document.getElementById(`folder-status-${lower}`);
     const pathDisplay = document.getElementById(`folder-path-display-${lower}`);
     const clipsCountEl = document.getElementById(`folder-clips-count-${lower}`);
     const imagesCountEl = document.getElementById(`folder-images-count-${lower}`);
     const errBox = document.getElementById(`folder-error-${lower}`);
+    const clipPickerWrap = document.getElementById(`folder-clip-picker-wrap-${lower}`);
+    const folderInput = document.getElementById(`folder-input-${lower}`);
 
+    if (folderInput) folderInput.value = "";
+    if (clipPickerWrap) clipPickerWrap.style.display = "none";
     if (statusBadge) {
         statusBadge.textContent = "No Folder";
         statusBadge.className = "badge-status";
@@ -1653,6 +2011,7 @@ function clearFolderSelection(angle) {
     if (clipsCountEl) clipsCountEl.textContent = "0";
     if (imagesCountEl) imagesCountEl.textContent = "0";
     if (errBox) errBox.style.display = "none";
+    showToast(`Cleared Angle ${angle} folder selection.`, "info");
 }
 
 // Timetable File Handlers

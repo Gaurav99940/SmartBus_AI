@@ -111,7 +111,7 @@
             </div>
 
             <!-- ANGLE A — SOURCE CLIP FOLDER -->
-            <div style="background:var(--bg-app);border:1px solid var(--border-color);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:12px;">
+            <div id="folder-box-a" style="background:var(--bg-app);border:1px solid var(--border-color);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:12px;transition:border-color 0.2s;">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
                     <span style="font-size:11px;font-weight:700;color:var(--text-main);"><i class="bi bi-folder-fill text-primary"></i> ANGLE A — SOURCE CLIP FOLDER</span>
                     <span id="folder-status-a" class="badge-status" style="font-size:10px;background:#f1f5f9;color:#64748b;">No Folder</span>
@@ -124,29 +124,42 @@
                     <span>Images: <strong id="folder-images-count-a">0</strong></span>
                 </div>
                 <div style="display:flex;gap:6px;flex-wrap:wrap;">
-                    <button type="button" class="btn-primary" style="padding:3px 8px;font-size:11px;" onclick="selectFolderDialog('A')">
+                    <button type="button" class="btn-primary" style="padding:4px 8px;font-size:11px;" onclick="selectFolderDialog('A')">
                         <i class="bi bi-folder2-open"></i> Select Folder
                     </button>
-                    <button type="button" class="btn-secondary" style="padding:3px 8px;font-size:11px;" onclick="rescanFolder('A')">
-                        <i class="bi bi-arrow-repeat"></i> Scan
+                    <button type="button" class="btn-secondary" style="padding:4px 8px;font-size:11px;" onclick="document.getElementById('file-input-a').click();">
+                        <i class="bi bi-file-earmark-play"></i> Select Clips
                     </button>
-                    <button type="button" class="btn-secondary" style="padding:3px 8px;font-size:11px;" onclick="clearFolderSelection('A')">
+                    <button type="button" class="btn-secondary" style="padding:4px 8px;font-size:11px;" onclick="rescanFolder('A')">
+                        <i class="bi bi-arrow-repeat"></i> Scan / Sync
+                    </button>
+                    <button type="button" class="btn-secondary" style="padding:4px 8px;font-size:11px;" onclick="clearFolderSelection('A')">
                         <i class="bi bi-x-circle"></i> Clear
                     </button>
+                </div>
+                <div id="folder-clip-picker-wrap-a" style="display:none;margin-top:8px;padding-top:6px;border-top:1px dashed var(--border-color);">
+                    <label style="font-size:10px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:3px;"><i class="bi bi-film"></i> Active Clip in Folder:</label>
+                    <select id="folder-clip-select-a" class="form-control" style="font-size:11px;padding:3px 6px;width:100%;" onchange="switchFolderActiveClip('A', this.value)"></select>
                 </div>
                 <div id="folder-error-a" style="display:none;margin-top:6px;padding:4px 8px;background:#fee2e2;color:#b91c1c;border-radius:4px;font-size:10px;"></div>
             </div>
 
             <!-- Angle A Dropzone -->
             <div id="dropzone-a" class="upload-dropzone" style="flex:1;min-height:220px;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:24px 14px;">
-                <input type="file" id="file-input-a" accept="image/jpeg,image/png,image/webp,video/mp4,video/avi,video/quicktime,video/x-matroska,video/*" style="display:none;" onchange="handleAngleFileSelected('A', this.files[0])">
-                <div id="prompt-a">
+                <input type="file" id="file-input-a" accept="image/jpeg,image/png,image/webp,video/mp4,video/avi,video/quicktime,video/x-matroska,video/*" multiple style="display:none;" onchange="handleAngleFileInputChange('A', this.files)">
+                <input type="file" id="folder-input-a" webkitdirectory mozdirectory directory multiple style="display:none;" onchange="handleBrowserFolderSelected('A', this.files)">
+                <div id="prompt-a" style="pointer-events:none;">
                     <i class="bi bi-cloud-arrow-up-fill dropzone-icon" style="font-size:32px;"></i>
                     <h5 style="font-size:14px;font-weight:600;margin-bottom:4px;">Angle A (Front Section)</h5>
-                    <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">Drag photo/video clip or click to browse</p>
-                    <button type="button" class="btn-secondary" style="padding:4px 12px;font-size:11px;" onclick="event.stopPropagation();document.getElementById('file-input-a').click();">
-                        <i class="bi bi-folder2-open"></i> Browse Files
-                    </button>
+                    <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">Drag photo, video clip, or whole folder here</p>
+                    <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;pointer-events:auto;">
+                        <button type="button" class="btn-secondary" style="padding:4px 10px;font-size:11px;" onclick="event.stopPropagation();document.getElementById('file-input-a').click();">
+                            <i class="bi bi-file-earmark-play"></i> Browse Clip
+                        </button>
+                        <button type="button" class="btn-primary" style="padding:4px 10px;font-size:11px;" onclick="event.stopPropagation();selectFolderDialog('A');">
+                            <i class="bi bi-folder-fill"></i> Attach Folder
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Preview container -->
@@ -170,7 +183,7 @@
                     <span style="color:var(--text-muted);"><i class="bi bi-clock"></i> Capture Time:</span>
                     <input type="text" id="timestamp-a" class="form-control" style="width:170px;padding:4px 8px;font-size:11px;" placeholder="YYYY-MM-DD HH:MM:SS">
                 </div>
-                <div id="metrics-pill-a" style="display:none;padding:6px 10px;background:var(--accent-primary-light);border-radius:var(--radius-sm);font-size:12px;display:flex;justify-content:space-between;">
+                <div id="metrics-pill-a" style="display:none;padding:6px 10px;background:var(--accent-primary-light);border-radius:var(--radius-sm);font-size:12px;justify-content:space-between;">
                     <span><strong>Detected:</strong> <span id="count-detected-a">0</span></span>
                     <span><strong>Review:</strong> <span id="count-uncertain-a">0</span></span>
                 </div>
@@ -191,7 +204,7 @@
             </div>
 
             <!-- ANGLE B — SOURCE CLIP FOLDER -->
-            <div style="background:var(--bg-app);border:1px solid var(--border-color);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:12px;">
+            <div id="folder-box-b" style="background:var(--bg-app);border:1px solid var(--border-color);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:12px;transition:border-color 0.2s;">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
                     <span style="font-size:11px;font-weight:700;color:var(--text-main);"><i class="bi bi-folder-fill text-primary"></i> ANGLE B — SOURCE CLIP FOLDER</span>
                     <span id="folder-status-b" class="badge-status" style="font-size:10px;background:#f1f5f9;color:#64748b;">No Folder</span>
@@ -204,29 +217,42 @@
                     <span>Images: <strong id="folder-images-count-b">0</strong></span>
                 </div>
                 <div style="display:flex;gap:6px;flex-wrap:wrap;">
-                    <button type="button" class="btn-primary" style="padding:3px 8px;font-size:11px;" onclick="selectFolderDialog('B')">
+                    <button type="button" class="btn-primary" style="padding:4px 8px;font-size:11px;" onclick="selectFolderDialog('B')">
                         <i class="bi bi-folder2-open"></i> Select Folder
                     </button>
-                    <button type="button" class="btn-secondary" style="padding:3px 8px;font-size:11px;" onclick="rescanFolder('B')">
-                        <i class="bi bi-arrow-repeat"></i> Scan
+                    <button type="button" class="btn-secondary" style="padding:4px 8px;font-size:11px;" onclick="document.getElementById('file-input-b').click();">
+                        <i class="bi bi-file-earmark-play"></i> Select Clips
                     </button>
-                    <button type="button" class="btn-secondary" style="padding:3px 8px;font-size:11px;" onclick="clearFolderSelection('B')">
+                    <button type="button" class="btn-secondary" style="padding:4px 8px;font-size:11px;" onclick="rescanFolder('B')">
+                        <i class="bi bi-arrow-repeat"></i> Scan / Sync
+                    </button>
+                    <button type="button" class="btn-secondary" style="padding:4px 8px;font-size:11px;" onclick="clearFolderSelection('B')">
                         <i class="bi bi-x-circle"></i> Clear
                     </button>
+                </div>
+                <div id="folder-clip-picker-wrap-b" style="display:none;margin-top:8px;padding-top:6px;border-top:1px dashed var(--border-color);">
+                    <label style="font-size:10px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:3px;"><i class="bi bi-film"></i> Active Clip in Folder:</label>
+                    <select id="folder-clip-select-b" class="form-control" style="font-size:11px;padding:3px 6px;width:100%;" onchange="switchFolderActiveClip('B', this.value)"></select>
                 </div>
                 <div id="folder-error-b" style="display:none;margin-top:6px;padding:4px 8px;background:#fee2e2;color:#b91c1c;border-radius:4px;font-size:10px;"></div>
             </div>
 
             <!-- Angle B Dropzone -->
             <div id="dropzone-b" class="upload-dropzone" style="flex:1;min-height:220px;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:24px 14px;">
-                <input type="file" id="file-input-b" accept="image/jpeg,image/png,image/webp,video/mp4,video/avi,video/quicktime,video/x-matroska,video/*" style="display:none;" onchange="handleAngleFileSelected('B', this.files[0])">
-                <div id="prompt-b">
+                <input type="file" id="file-input-b" accept="image/jpeg,image/png,image/webp,video/mp4,video/avi,video/quicktime,video/x-matroska,video/*" multiple style="display:none;" onchange="handleAngleFileInputChange('B', this.files)">
+                <input type="file" id="folder-input-b" webkitdirectory mozdirectory directory multiple style="display:none;" onchange="handleBrowserFolderSelected('B', this.files)">
+                <div id="prompt-b" style="pointer-events:none;">
                     <i class="bi bi-cloud-arrow-up-fill dropzone-icon" style="font-size:32px;"></i>
                     <h5 style="font-size:14px;font-weight:600;margin-bottom:4px;">Angle B (Middle Section)</h5>
-                    <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">Drag photo/video clip or click to browse</p>
-                    <button type="button" class="btn-secondary" style="padding:4px 12px;font-size:11px;" onclick="event.stopPropagation();document.getElementById('file-input-b').click();">
-                        <i class="bi bi-folder2-open"></i> Browse Files
-                    </button>
+                    <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">Drag photo, video clip, or whole folder here</p>
+                    <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;pointer-events:auto;">
+                        <button type="button" class="btn-secondary" style="padding:4px 10px;font-size:11px;" onclick="event.stopPropagation();document.getElementById('file-input-b').click();">
+                            <i class="bi bi-file-earmark-play"></i> Browse Clip
+                        </button>
+                        <button type="button" class="btn-primary" style="padding:4px 10px;font-size:11px;" onclick="event.stopPropagation();selectFolderDialog('B');">
+                            <i class="bi bi-folder-fill"></i> Attach Folder
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Preview container -->
@@ -250,7 +276,7 @@
                     <span style="color:var(--text-muted);"><i class="bi bi-clock"></i> Capture Time:</span>
                     <input type="text" id="timestamp-b" class="form-control" style="width:170px;padding:4px 8px;font-size:11px;" placeholder="YYYY-MM-DD HH:MM:SS">
                 </div>
-                <div id="metrics-pill-b" style="display:none;padding:6px 10px;background:var(--accent-primary-light);border-radius:var(--radius-sm);font-size:12px;display:flex;justify-content:space-between;">
+                <div id="metrics-pill-b" style="display:none;padding:6px 10px;background:var(--accent-primary-light);border-radius:var(--radius-sm);font-size:12px;justify-content:space-between;">
                     <span><strong>Detected:</strong> <span id="count-detected-b">0</span></span>
                     <span><strong>Review:</strong> <span id="count-uncertain-b">0</span></span>
                 </div>
@@ -271,7 +297,7 @@
             </div>
 
             <!-- ANGLE C — SOURCE CLIP FOLDER -->
-            <div style="background:var(--bg-app);border:1px solid var(--border-color);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:12px;">
+            <div id="folder-box-c" style="background:var(--bg-app);border:1px solid var(--border-color);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:12px;transition:border-color 0.2s;">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
                     <span style="font-size:11px;font-weight:700;color:var(--text-main);"><i class="bi bi-folder-fill text-primary"></i> ANGLE C — SOURCE CLIP FOLDER</span>
                     <span id="folder-status-c" class="badge-status" style="font-size:10px;background:#f1f5f9;color:#64748b;">No Folder</span>
@@ -284,29 +310,42 @@
                     <span>Images: <strong id="folder-images-count-c">0</strong></span>
                 </div>
                 <div style="display:flex;gap:6px;flex-wrap:wrap;">
-                    <button type="button" class="btn-primary" style="padding:3px 8px;font-size:11px;" onclick="selectFolderDialog('C')">
+                    <button type="button" class="btn-primary" style="padding:4px 8px;font-size:11px;" onclick="selectFolderDialog('C')">
                         <i class="bi bi-folder2-open"></i> Select Folder
                     </button>
-                    <button type="button" class="btn-secondary" style="padding:3px 8px;font-size:11px;" onclick="rescanFolder('C')">
-                        <i class="bi bi-arrow-repeat"></i> Scan
+                    <button type="button" class="btn-secondary" style="padding:4px 8px;font-size:11px;" onclick="document.getElementById('file-input-c').click();">
+                        <i class="bi bi-file-earmark-play"></i> Select Clips
                     </button>
-                    <button type="button" class="btn-secondary" style="padding:3px 8px;font-size:11px;" onclick="clearFolderSelection('C')">
+                    <button type="button" class="btn-secondary" style="padding:4px 8px;font-size:11px;" onclick="rescanFolder('C')">
+                        <i class="bi bi-arrow-repeat"></i> Scan / Sync
+                    </button>
+                    <button type="button" class="btn-secondary" style="padding:4px 8px;font-size:11px;" onclick="clearFolderSelection('C')">
                         <i class="bi bi-x-circle"></i> Clear
                     </button>
+                </div>
+                <div id="folder-clip-picker-wrap-c" style="display:none;margin-top:8px;padding-top:6px;border-top:1px dashed var(--border-color);">
+                    <label style="font-size:10px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:3px;"><i class="bi bi-film"></i> Active Clip in Folder:</label>
+                    <select id="folder-clip-select-c" class="form-control" style="font-size:11px;padding:3px 6px;width:100%;" onchange="switchFolderActiveClip('C', this.value)"></select>
                 </div>
                 <div id="folder-error-c" style="display:none;margin-top:6px;padding:4px 8px;background:#fee2e2;color:#b91c1c;border-radius:4px;font-size:10px;"></div>
             </div>
 
             <!-- Angle C Dropzone -->
             <div id="dropzone-c" class="upload-dropzone" style="flex:1;min-height:220px;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:24px 14px;">
-                <input type="file" id="file-input-c" accept="image/jpeg,image/png,image/webp,video/mp4,video/avi,video/quicktime,video/x-matroska,video/*" style="display:none;" onchange="handleAngleFileSelected('C', this.files[0])">
-                <div id="prompt-c">
+                <input type="file" id="file-input-c" accept="image/jpeg,image/png,image/webp,video/mp4,video/avi,video/quicktime,video/x-matroska,video/*" multiple style="display:none;" onchange="handleAngleFileInputChange('C', this.files)">
+                <input type="file" id="folder-input-c" webkitdirectory mozdirectory directory multiple style="display:none;" onchange="handleBrowserFolderSelected('C', this.files)">
+                <div id="prompt-c" style="pointer-events:none;">
                     <i class="bi bi-cloud-arrow-up-fill dropzone-icon" style="font-size:32px;"></i>
                     <h5 style="font-size:14px;font-weight:600;margin-bottom:4px;">Angle C (Rear Section)</h5>
-                    <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">Drag photo/video clip or click to browse</p>
-                    <button type="button" class="btn-secondary" style="padding:4px 12px;font-size:11px;" onclick="event.stopPropagation();document.getElementById('file-input-c').click();">
-                        <i class="bi bi-folder2-open"></i> Browse Files
-                    </button>
+                    <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">Drag photo, video clip, or whole folder here</p>
+                    <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;pointer-events:auto;">
+                        <button type="button" class="btn-secondary" style="padding:4px 10px;font-size:11px;" onclick="event.stopPropagation();document.getElementById('file-input-c').click();">
+                            <i class="bi bi-file-earmark-play"></i> Browse Clip
+                        </button>
+                        <button type="button" class="btn-primary" style="padding:4px 10px;font-size:11px;" onclick="event.stopPropagation();selectFolderDialog('C');">
+                            <i class="bi bi-folder-fill"></i> Attach Folder
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Preview container -->
@@ -330,7 +369,7 @@
                     <span style="color:var(--text-muted);"><i class="bi bi-clock"></i> Capture Time:</span>
                     <input type="text" id="timestamp-c" class="form-control" style="width:170px;padding:4px 8px;font-size:11px;" placeholder="YYYY-MM-DD HH:MM:SS">
                 </div>
-                <div id="metrics-pill-c" style="display:none;padding:6px 10px;background:var(--accent-primary-light);border-radius:var(--radius-sm);font-size:12px;display:flex;justify-content:space-between;">
+                <div id="metrics-pill-c" style="display:none;padding:6px 10px;background:var(--accent-primary-light);border-radius:var(--radius-sm);font-size:12px;justify-content:space-between;">
                     <span><strong>Detected:</strong> <span id="count-detected-c">0</span></span>
                     <span><strong>Review:</strong> <span id="count-uncertain-c">0</span></span>
                 </div>

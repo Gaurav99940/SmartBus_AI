@@ -13,7 +13,8 @@ from app.ai.matcher import (
     match_faces_to_journey_identities, update_passenger_embedding,
     update_passenger_gallery_and_embedding, update_passenger_clothes,
     generate_next_person_id, cosine_similarity,
-    match_angle_detections_to_passengers
+    match_angle_detections_to_passengers,
+    check_biometric_identity_conflict
 )
 from app.ai.face_pipeline import render_annotated_image
 from app.ai.person_pipeline import detect_persons_and_faces, render_multi_angle_annotated_hud

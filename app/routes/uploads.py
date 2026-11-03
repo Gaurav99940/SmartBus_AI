@@ -35,14 +35,31 @@ def inspect_metadata():
     if file.filename == "" or not allowed_file(file.filename):
         return jsonify({"error": "Invalid file format. Please upload JPG, PNG or WEBP."}), 400
 
-    # Save to temp
-    temp_name = f"temp_{uuid.uuid4().hex[:10]}.jpg"
+    clean_orig = secure_filename(file.filename) or "temp_file.jpg"
+    ext = clean_orig.rsplit(".", 1)[1].lower() if "." in clean_orig else "jpg"
+    temp_name = f"temp_{uuid.uuid4().hex[:10]}.{ext}"
     temp_path = Config.UPLOAD_FOLDER / temp_name
     Config.UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
     file.save(str(temp_path))
 
-    # Extract EXIF
-    meta = extract_metadata(str(temp_path))
+    is_video = ext in ("mp4", "avi", "mov", "mkv", "wmv", "webm", "m4v")
+    if is_video:
+        from app.services.media_service import extract_media_metadata
+        v_meta = extract_media_metadata(str(temp_path))
+        capture_dt = v_meta.get("start_time")
+        meta = {
+            "has_exif": capture_dt is not None,
+            "capture_timestamp": capture_dt,
+            "latitude": None,
+            "longitude": None,
+            "gps_accuracy": None,
+            "device_make": "CCTV / Video Device",
+            "device_model": ext.upper(),
+            "warnings": []
+        }
+    else:
+        meta = extract_metadata(str(temp_path))
+
     file_hash = compute_file_hash(str(temp_path))
     
     # Clean up temp
@@ -469,16 +486,31 @@ def upload_multi_angle_bus_photos():
 
     db.session.commit()
 
-    # Run multi-angle AI pipeline
-    result = process_multi_angle_batch(
-        journey_id=journey.id,
-        batch_id=batch_id,
-        angle_uploads=angle_uploads,
-        user_id=user_id,
-        stop_id=final_stop_id
-    )
-
-    return jsonify(result), 201
+    # Run multi-angle AI pipeline with resilient error handling
+    try:
+        result = process_multi_angle_batch(
+            journey_id=journey.id,
+            batch_id=batch_id,
+            angle_uploads=angle_uploads,
+            user_id=user_id,
+            stop_id=final_stop_id
+        )
+        return jsonify(result), 201
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        db.session.rollback()
+        for u in angle_uploads.values():
+            try:
+                u.status = "failed"
+                u.processing_notes = f"Multi-angle AI processing error: {str(e)}"
+            except Exception:
+                pass
+        try:
+            db.session.commit()
+        except Exception:
+            pass
+        return jsonify({"success": False, "error": f"AI Pipeline error: {str(e)}"}), 500
 
 
 @uploads_bp.route("/observations/<int:obs_id>/review", methods=["POST"])
