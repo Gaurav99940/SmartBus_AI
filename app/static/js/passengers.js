@@ -1255,6 +1255,29 @@ function closeMergeHistoryModal() {
     if (modal) modal.classList.remove("active");
 }
 
+async function clearAllMergeHistory() {
+    if (!confirm("Are you sure you want to permanently delete all merge history records? This cannot be undone.")) {
+        return;
+    }
+    try {
+        const res = await fetch("/api/passengers/merge-history/clear", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" }
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast(data.message || "Merge history deleted successfully.", "success");
+            openMergeHistoryModal();
+            loadDateWiseReport();
+        } else {
+            showToast(data.error || "Failed to clear merge history.", "error");
+        }
+    } catch (err) {
+        showToast("Error: " + err.message, "error");
+    }
+}
+window.clearAllMergeHistory = clearAllMergeHistory;
+
 // -------------------------------------------------------------
 // EXPORT HANDLERS (Requirement 11)
 // -------------------------------------------------------------

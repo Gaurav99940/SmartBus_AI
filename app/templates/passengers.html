@@ -310,7 +310,7 @@
 <!-- ========================================================================= -->
 <div class="modal-overlay" id="merge-history-modal" onclick="if(event.target===this) closeMergeHistoryModal()">
     <div class="modal-box" style="max-width:840px;width:94%;">
-        <div class="modal-header">
+        <div class="modal-header" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
             <div>
                 <h3 class="modal-title" style="margin:0;font-size:18px;font-weight:700;display:flex;align-items:center;gap:8px;">
                     <i class="bi bi-clock-history text-primary"></i> Passenger Identity Merge History & Undo
@@ -319,7 +319,12 @@
                     Auditable log of manual consolidations with safe reversal capability
                 </small>
             </div>
-            <button class="modal-close-btn" onclick="closeMergeHistoryModal()">&times;</button>
+            <div style="display:flex;align-items:center;gap:10px;">
+                <button class="btn-sm" onclick="clearAllMergeHistory()" style="background:#ef4444;color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:600;display:inline-flex;align-items:center;gap:6px;cursor:pointer;box-shadow:0 1px 3px rgba(239,68,68,0.3);transition:background 0.2s ease;" onmouseover="this.style.background='#dc2626'" onmouseout="this.style.background='#ef4444'" title="Delete all merge records in one click">
+                    <i class="bi bi-trash-fill"></i> Delete Merge History
+                </button>
+                <button class="modal-close-btn" onclick="closeMergeHistoryModal()">&times;</button>
+            </div>
         </div>
 
         <div class="table-responsive" style="max-height:420px;overflow-y:auto;">

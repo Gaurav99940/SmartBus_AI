@@ -298,6 +298,99 @@ def clear_demo_data():
     })
 
 
+@settings_bp.route("/purge-all-data", methods=["POST", "DELETE"])
+def purge_all_passenger_data():
+    """
+    Completely purges all passenger identities, observations, presence events, merge history,
+    local crop files, smartbus-data exports, and remote server images.
+    Leaves system in a completely clean, lightweight, running state.
+    """
+    from flask import has_request_context
+    user_id = session.get("user_id") if has_request_context() else None
+    import os
+    import shutil
+    import json
+    from app.models import PassengerMergeRecord, CloudSyncLog
+    from app.services.cloud_sync_service import fetch_remote_images, delete_remote_images_bulk
+
+    # 1. Counts before deletion
+    p_count = PassengerIdentity.query.count()
+    obs_count = PassengerObservation.query.count()
+    merge_count = PassengerMergeRecord.query.count()
+
+    # 2. Database purge
+    PassengerMergeRecord.query.delete(synchronize_session=False)
+    ManualReview.query.delete(synchronize_session=False)
+    PresenceEvent.query.delete(synchronize_session=False)
+    GPSLocation.query.delete(synchronize_session=False)
+    PassengerObservation.query.delete(synchronize_session=False)
+    PassengerIdentity.query.delete(synchronize_session=False)
+    Upload.query.delete(synchronize_session=False)
+    CloudSyncLog.query.delete(synchronize_session=False)
+
+    # 3. Purge local crops directory
+    crops_dir = Path(Config.DATA_DIR) / "crops"
+    deleted_local_files = 0
+    if crops_dir.exists():
+        for f in crops_dir.glob("*.*"):
+            try:
+                f.unlink()
+                deleted_local_files += 1
+            except Exception:
+                pass
+
+    # 4. Purge smartbus-data/journeys/
+    base_dir = getattr(Config, "SMARTBUS_DATA_DIR", Path(Config.BASE_DIR) / "smartbus-data")
+    jny_dir = base_dir / "journeys"
+    if jny_dir.exists():
+        for d in jny_dir.iterdir():
+            if d.is_dir():
+                shutil.rmtree(d, ignore_errors=True)
+
+    manifest_p = base_dir / "manifest.json"
+    with open(manifest_p, "w", encoding="utf-8") as mf:
+        json.dump({
+            "last_synced_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"),
+            "published_journeys": []
+        }, mf, indent=2)
+
+    checksum_p = base_dir / "image_checksums.json"
+    with open(checksum_p, "w", encoding="utf-8") as cf:
+        json.dump({}, cf, indent=2)
+
+    # 5. Remote image server purge
+    remote_deleted = 0
+    try:
+        remote_data = fetch_remote_images(limit=1000, offset=0)
+        items = remote_data.get("images", []) if isinstance(remote_data, dict) else []
+        filenames = [item.get("filename") for item in items if item.get("filename")]
+        if filenames:
+            del_res = delete_remote_images_bulk(filenames, force=True, user_id=user_id)
+            remote_deleted = del_res.get("deleted_count", 0)
+    except Exception as e:
+        print(f"[Remote Purge Warning] {e}")
+
+    db.session.commit()
+
+    log_audit("PURGE_ALL_PASSENGER_DATA", details={
+        "deleted_passengers": p_count,
+        "deleted_observations": obs_count,
+        "deleted_merges": merge_count,
+        "deleted_local_files": deleted_local_files,
+        "remote_deleted": remote_deleted
+    }, user_id=user_id)
+
+    return jsonify({
+        "success": True,
+        "message": f"Successfully purged all passenger data! Cleared {p_count} passengers, {obs_count} observations, {merge_count} merge logs, {deleted_local_files} local crop files, and {remote_deleted} remote images.",
+        "deleted_passengers": p_count,
+        "deleted_observations": obs_count,
+        "deleted_merges": merge_count,
+        "deleted_local_files": deleted_local_files,
+        "remote_deleted": remote_deleted
+    })
+
+
 def _get_dir_size_bytes(directory_path):
     """Calculates recursive directory size in bytes."""
     total = 0
@@ -492,11 +585,36 @@ def cleanup_historical_data():
                     except Exception:
                         pass
 
-        # Count passengers
+        # Count passengers and collect remote filenames
         passengers = PassengerIdentity.query.filter_by(journey_id=j_id).all()
         deleted_passengers_count += len(passengers)
+        remote_fns = [f"{p.person_id}_face.jpg" for p in passengers if p.person_id]
+        if remote_fns:
+            try:
+                from app.services.cloud_sync_service import delete_remote_images_bulk
+                delete_remote_images_bulk(remote_fns, force=True)
+            except Exception:
+                pass
+
+        # Clean smartbus-data folder
+        try:
+            base_dir = getattr(Config, "SMARTBUS_DATA_DIR", Path(Config.BASE_DIR) / "smartbus-data")
+            j_folder = base_dir / "journeys" / f"journey_{j_id:03d}"
+            if j_folder.exists():
+                shutil.rmtree(j_folder, ignore_errors=True)
+            manifest_p = base_dir / "manifest.json"
+            if manifest_p.is_file():
+                with open(manifest_p, "r", encoding="utf-8") as mf:
+                    m_data = json.load(mf)
+                m_data["published_journeys"] = [pj for pj in m_data.get("published_journeys", []) if pj.get("journey_id") != j_id]
+                with open(manifest_p, "w", encoding="utf-8") as mf:
+                    json.dump(m_data, mf, indent=2)
+        except Exception:
+            pass
 
         # 2. Database cascade cleanup
+        from app.models import PassengerMergeRecord
+        PassengerMergeRecord.query.filter_by(journey_id=j_id).delete(synchronize_session=False)
         BusLocationLog.query.filter_by(journey_id=j_id).delete(synchronize_session=False)
         ManualReview.query.filter_by(journey_id=j_id).delete(synchronize_session=False)
         PresenceEvent.query.filter_by(journey_id=j_id).delete(synchronize_session=False)

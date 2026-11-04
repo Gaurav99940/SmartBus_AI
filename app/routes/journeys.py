@@ -1,3 +1,6 @@
+import os
+import shutil
+import json
 from pathlib import Path
 from datetime import datetime
 from flask import Blueprint, request, jsonify, session
@@ -170,12 +173,47 @@ def delete_journey(journey_id):
                 except Exception:
                     pass
 
-    # 2. Purge database records
+    # 2. Purge database records & collect remote image filenames
     passengers = PassengerIdentity.query.filter_by(journey_id=journey.id).all()
     p_ids = [p.id for p in passengers]
+    remote_filenames_to_delete = []
+    for p in passengers:
+        if p.person_id:
+            remote_filenames_to_delete.append(f"{p.person_id}_face.jpg")
+        if p.thumbnail_path and "http" in p.thumbnail_path:
+            remote_filenames_to_delete.append(os.path.basename(p.thumbnail_path))
+
+    # Delete remote images from server
+    if remote_filenames_to_delete:
+        try:
+            from app.services.cloud_sync_service import delete_remote_images_bulk
+            delete_remote_images_bulk(list(set(remote_filenames_to_delete)), force=True)
+        except Exception:
+            pass
+
+    # Purge smartbus-data folder for this journey
+    try:
+        base_dir = getattr(Config, "SMARTBUS_DATA_DIR", Path(Config.BASE_DIR) / "smartbus-data")
+        jny_folder = base_dir / "journeys" / f"journey_{journey.id:03d}"
+        if jny_folder.exists() and jny_folder.is_dir():
+            shutil.rmtree(jny_folder, ignore_errors=True)
+
+        # Update manifest.json
+        manifest_p = base_dir / "manifest.json"
+        if manifest_p.is_file():
+            with open(manifest_p, "r", encoding="utf-8") as mf:
+                m_data = json.load(mf)
+            m_data["published_journeys"] = [pj for pj in m_data.get("published_journeys", []) if pj.get("journey_id") != journey.id]
+            with open(manifest_p, "w", encoding="utf-8") as mf:
+                json.dump(m_data, mf, indent=2)
+    except Exception:
+        pass
+
     if p_ids:
         ManualReview.query.filter(ManualReview.passenger_identity_id.in_(p_ids)).delete(synchronize_session=False)
 
+    from app.models import PassengerMergeRecord
+    PassengerMergeRecord.query.filter_by(journey_id=journey.id).delete(synchronize_session=False)
     PresenceEvent.query.filter_by(journey_id=journey.id).delete(synchronize_session=False)
     GPSLocation.query.filter_by(journey_id=journey.id).delete(synchronize_session=False)
     PassengerObservation.query.filter_by(journey_id=journey.id).delete(synchronize_session=False)

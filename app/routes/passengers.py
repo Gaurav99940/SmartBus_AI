@@ -340,6 +340,25 @@ def get_merge_history_endpoint():
         return jsonify({"error": str(e)}), 400
 
 
+@passengers_bp.route("/merge-history/clear", methods=["POST", "DELETE"])
+def clear_merge_history_endpoint():
+    """
+    Permanently clears all passenger merge history records in one click.
+    """
+    from app.services.passenger_report_service import clear_all_merge_history
+    from app.services.audit_service import log_audit
+    try:
+        count = clear_all_merge_history()
+        log_audit("CLEAR_MERGE_HISTORY", details={"cleared_count": count}, user_id=session.get("user_id"))
+        return jsonify({
+            "success": True,
+            "message": f"Successfully deleted {count} merge history record(s).",
+            "cleared_count": count
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @passengers_bp.route("/export-datewise.csv", methods=["GET"])
 def export_datewise_csv_endpoint():
     """

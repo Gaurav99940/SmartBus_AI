@@ -725,6 +725,21 @@ def get_merge_history(journey_id=None):
     return [r.to_dict() for r in records]
 
 
+def clear_all_merge_history():
+    """
+    Permanently deletes all passenger merge records and restores canonical status.
+    """
+    count = PassengerMergeRecord.query.count()
+    # Reset is_merged flags on passenger identities
+    PassengerIdentity.query.filter(PassengerIdentity.is_merged == True).update({
+        "is_merged": False,
+        "canonical_identity_id": None
+    }, synchronize_session=False)
+    PassengerMergeRecord.query.delete(synchronize_session=False)
+    db.session.commit()
+    return count
+
+
 def generate_date_wise_report_csv(
     target_date=None,
     start_date=None,
