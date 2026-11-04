@@ -43,14 +43,67 @@ def create_app(config_class=Config):
     app.register_blueprint(automated_bp)
     app.register_blueprint(cloud_sync_bp)
 
-    # Data file serving (uploads, face crops)
+    # Data file serving (uploads, face crops, cloud thumbnails, with fallback placeholders)
     @app.route("/data/<path:filename>")
     def serve_data_file(filename):
+        from flask import Response
         # Security: protect against directory traversal
-        safe_path = Path(Config.DATA_DIR) / filename
-        if not str(safe_path.resolve()).startswith(str(Config.DATA_DIR.resolve())):
+        clean_fn = filename.replace("\\", "/").lstrip("/")
+        if ".." in clean_fn:
             abort(403)
-        return send_from_directory(Config.DATA_DIR, filename)
+
+        base_data = Path(Config.DATA_DIR).resolve()
+        safe_path = (Path(Config.DATA_DIR) / clean_fn).resolve()
+        if str(safe_path).startswith(str(base_data)) and safe_path.is_file():
+            return send_from_directory(Config.DATA_DIR, clean_fn)
+
+        # Fallback 1: check inside data/crops
+        base_name = os.path.basename(clean_fn)
+        crops_p = Path(Config.DATA_DIR) / "crops" / base_name
+        if crops_p.is_file():
+            return send_from_directory(Path(Config.DATA_DIR) / "crops", base_name)
+
+        # Fallback 2: check inside smartbus-data/journeys/*/thumbnails/
+        sb_journeys = Path(Config.BASE_DIR) / "smartbus-data" / "journeys"
+        if sb_journeys.is_dir():
+            target_names = [base_name]
+            if not base_name.endswith(".jpg"):
+                target_names.append(f"{base_name}_face.jpg")
+            stem = Path(base_name).stem.split("_")[0]
+            if stem.startswith("P"):
+                target_names.append(f"{stem}_face.jpg")
+
+            for j_folder in sb_journeys.iterdir():
+                t_folder = j_folder / "thumbnails"
+                if t_folder.is_dir():
+                    for tn in target_names:
+                        tf = t_folder / tn
+                        if tf.is_file():
+                            return send_from_directory(t_folder, tn)
+
+        # Fallback 3: check remote checksum mapping
+        try:
+            from app.services.cloud_sync_service import load_image_checksum_cache
+            cache = load_image_checksum_cache()
+            for entry in cache.values():
+                if entry.get("orig_basename") == base_name or entry.get("filename") == base_name:
+                    rem_url = entry.get("static_url") or entry.get("view_url")
+                    if rem_url:
+                        return redirect(rem_url)
+        except Exception:
+            pass
+
+        # Fallback 4: Return clean inline SVG avatar placeholder (prevents broken image icons)
+        pid = Path(clean_fn).stem.split("_")[0][:4].upper()
+        if not pid or pid in ["NONE", "NULL", "THUMBNAIL"]:
+            pid = "PAX"
+        svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120">
+            <rect width="120" height="120" rx="16" fill="#1e293b"/>
+            <circle cx="60" cy="48" r="22" fill="#334155"/>
+            <path d="M26 102c0-18 15-32 34-32s34 14 34 32" fill="#334155"/>
+            <text x="60" y="54" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="700" fill="#38bdf8" text-anchor="middle">{pid}</text>
+        </svg>'''
+        return Response(svg, mimetype="image/svg+xml")
 
     # UI Page Routes
     @app.route("/")

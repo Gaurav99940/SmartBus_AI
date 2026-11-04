@@ -14,6 +14,15 @@ let stopMarkers = [];
 let currentSelectedBusId = null;
 let currentUserRole = "operator";
 
+function formatPassengerPhotoUrl(pathOrUrl) {
+    if (!pathOrUrl) return null;
+    const s = String(pathOrUrl).trim();
+    if (s.startsWith('http://') || s.startsWith('https://')) return s;
+    if (s.startsWith('/data/http://') || s.startsWith('/data/https://')) return s.substring(6);
+    if (s.startsWith('/')) return s;
+    return `/data/${s}`;
+}
+
 document.addEventListener("DOMContentLoaded", () => {
     initRouteMap();
     checkUserAndLoadBuses();
@@ -299,8 +308,9 @@ function renderPassengerRouteLinesList() {
 
         rowCard.onclick = () => selectPassenger(p.id);
 
-        const avatarImg = p.thumbnail_path 
-            ? `<img src="/data/${p.thumbnail_path}" style="width:68px;height:68px;border-radius:12px;object-fit:cover;border:3px solid ${isSelected ? '#10b981' : '#cbd5e1'};box-shadow:0 3px 8px rgba(0,0,0,0.15);" alt="${p.person_id}">`
+        const photoUrl = formatPassengerPhotoUrl(p.thumbnail_path || p.thumbnail_url);
+        const avatarImg = photoUrl 
+            ? `<img src="${photoUrl}" style="width:68px;height:68px;border-radius:12px;object-fit:cover;border:3px solid ${isSelected ? '#10b981' : '#cbd5e1'};box-shadow:0 3px 8px rgba(0,0,0,0.15);" alt="${p.person_id}" onerror="this.onerror=null;this.parentElement.innerHTML='<div style=\\'width:68px;height:68px;border-radius:12px;background:#1e293b;color:#38bdf8;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:800;border:3px solid ${isSelected ? '#10b981' : '#cbd5e1'};\\'>${p.person_id ? p.person_id.substring(0,2) : 'P'}</div>';">`
             : `<div style="width:68px;height:68px;border-radius:12px;background:linear-gradient(135deg, #10b981 0%, #0ea5e9 100%);color:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800;border:3px solid ${isSelected ? '#10b981' : '#cbd5e1'};">${p.person_id ? p.person_id.substring(0,2) : 'P'}</div>`;
 
         // Generate the horizontal route line for this passenger
@@ -446,8 +456,9 @@ function selectPassenger(passengerId) {
     if (barEl) barEl.style.width = `${p.travel_percentage}%`;
 
     if (avatarWrap) {
-        avatarWrap.innerHTML = p.thumbnail_path 
-            ? `<img src="/data/${p.thumbnail_path}" class="passenger-thumb" style="width:50px;height:50px;border-radius:50%;border:2px solid #10b981;" alt="${p.person_id}">`
+        const activePhotoUrl = formatPassengerPhotoUrl(p.thumbnail_path || p.thumbnail_url);
+        avatarWrap.innerHTML = activePhotoUrl 
+            ? `<img src="${activePhotoUrl}" class="passenger-thumb" style="width:50px;height:50px;border-radius:50%;border:2px solid #10b981;" alt="${p.person_id}" onerror="this.onerror=null;this.parentElement.innerHTML='<div class=\\'passenger-thumb\\' style=\\'width:50px;height:50px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#10b981;color:#fff;font-size:18px;font-weight:700;\\'>${p.person_id ? p.person_id.substring(0,2) : 'P'}</div>';">`
             : `<div class="passenger-thumb" style="width:50px;height:50px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#10b981;color:#fff;font-size:18px;font-weight:700;">${p.person_id ? p.person_id.substring(0,2) : 'P'}</div>`;
     }
 

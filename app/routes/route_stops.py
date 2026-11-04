@@ -5,6 +5,7 @@ from app.config import Config
 from app.database import db
 from app.models import RouteStop, Bus, Journey, PassengerIdentity, User, MasterRouteStop, MasterUPRoute
 from app.services.audit_service import log_audit
+from app.services.cloud_sync_service import resolve_passenger_image_url
 
 route_stops_bp = Blueprint("route_stops", __name__, url_prefix="/api/route-stops")
 
@@ -616,7 +617,8 @@ def get_passenger_trajectories():
             "is_merged": bool(p.is_merged or p.canonical_identity_id),
             "current_seat": p.get_seat_number(),
             "status": p.status,
-            "thumbnail_path": p.thumbnail_path,
+            "thumbnail_path": resolve_passenger_image_url(p.thumbnail_path, p.person_id),
+            "thumbnail_url": resolve_passenger_image_url(p.thumbnail_path, p.person_id),
             "first_seen_time": p.first_seen_time.strftime("%I:%M:%S %p") if p.first_seen_time else None,
             "last_seen_time": p.last_seen_time.strftime("%I:%M:%S %p") if p.last_seen_time else None,
             "first_observed_angle": first_ang,
@@ -644,7 +646,7 @@ def get_passenger_trajectories():
             "total_route_stops": stops_count,
             "travel_percentage": travel_pct,
             "traveled_summary": f"Traveled {traveled_count} of {stops_count} Stops ({travel_pct}%)",
-            "coverage_desc": f"Stop #{b_order} ({getattr(boarding_stop, 'stop_name', '')}) ➔ Stop #{e_order} ({getattr(exit_stop, 'stop_name', '')})",
+            "coverage_desc": f"Stop #{b_order} ({getattr(boarding_stop, 'stop_name', '')}) -> Stop #{e_order} ({getattr(exit_stop, 'stop_name', '')})",
             "covered_stop_names": covered_names,
             "traveled_stop_ids": traveled_stop_ids,
             "non_traveled_stop_ids": non_traveled_stop_ids

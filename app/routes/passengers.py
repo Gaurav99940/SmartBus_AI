@@ -2,6 +2,7 @@ from datetime import datetime
 from flask import Blueprint, request, jsonify, session
 from app.database import db
 from app.models import PassengerIdentity, PassengerObservation, PresenceEvent, ManualReview
+from app.services.cloud_sync_service import resolve_passenger_image_url
 from app.services.journey_service import update_manual_passenger_status
 from app.services.audit_service import log_audit
 
@@ -27,7 +28,7 @@ def get_passengers():
         d = p.to_dict()
         # Add quick summary metrics
         d["observations_count"] = len(p.observations)
-        d["thumbnail_url"] = f"/data/{p.thumbnail_path}" if p.thumbnail_path else None
+        d["thumbnail_url"] = resolve_passenger_image_url(p.thumbnail_path, p.person_id)
         results.append(d)
 
     return jsonify(results)
@@ -84,7 +85,7 @@ def get_passenger_details(passenger_id):
     reviews = ManualReview.query.filter_by(passenger_identity_id=p.id).order_by(ManualReview.reviewed_at.asc()).all()
 
     data = p.to_dict()
-    data["thumbnail_url"] = f"/data/{p.thumbnail_path}" if p.thumbnail_path else None
+    data["thumbnail_url"] = resolve_passenger_image_url(p.thumbnail_path, p.person_id)
     # Deduplicate consecutive/redundant presence events for clean timeline
     clean_events = []
     seen_keys = set()

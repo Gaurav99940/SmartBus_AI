@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from flask import Blueprint, jsonify, request, session
 from app.models import Bus, Journey, Upload, PassengerIdentity, PresenceEvent, User, ManualReview
 from app.database import db
+from app.services.cloud_sync_service import resolve_passenger_image_url
 
 dashboard_bp = Blueprint("dashboard", __name__, url_prefix="/api/dashboard")
 
@@ -195,7 +196,7 @@ def get_stats():
                     "boarding_status": "Confirmed" if p.total_observations > 0 else "Estimated",
                     "exit_status": "Confirmed" if p.status == "EXIT_CONFIRMED" else ("Unconfirmed" if p.status == "EXIT_UNCONFIRMED" else "Not Applicable"),
                     "confidence": "High" if p.status == "PRESENT" else ("Needs Review" if p.status == "NEEDS_REVIEW" else "Medium"),
-                    "thumbnail_url": f"/data/{p.thumbnail_path}" if p.thumbnail_path else None
+                    "thumbnail_url": resolve_passenger_image_url(p.thumbnail_path, p.person_id)
                 })
 
         selected_bus_details = {

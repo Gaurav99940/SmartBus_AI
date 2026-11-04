@@ -1,0 +1,34 @@
+name: SmartBus AI Continuous Deployment (CD)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy to Production Live Server
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout Code Repository
+        uses: actions/checkout@v4
+
+      - name: Trigger Live Server Webhook Deployment
+        env:
+          LIVE_SERVER_URL: ${{ secrets.LIVE_SERVER_URL || 'http://143.244.140.108:5000' }}
+          DEPLOY_WEBHOOK_SECRET: ${{ secrets.DEPLOY_WEBHOOK_SECRET || 'smartbus-prod-webhook-token-2026' }}
+        run: |
+          echo "Triggering live server data synchronization and safe update..."
+          curl -s -X POST "${LIVE_SERVER_URL}/api/sync/pull-from-github" \
+            -H "Content-Type: application/json" \
+            -H "X-Sync-Token: ${DEPLOY_WEBHOOK_SECRET}" \
+            -d '{"action": "deploy_pull", "source": "github_actions", "branch": "main"}' || true
+
+      - name: Verify Live Server Status
+        env:
+          LIVE_SERVER_URL: ${{ secrets.LIVE_SERVER_URL || 'http://143.244.140.108:5000' }}
+        run: |
+          echo "Checking live server health..."
+          curl -s --connect-timeout 10 "${LIVE_SERVER_URL}/api/dashboard/stats" || echo "Live server standby."

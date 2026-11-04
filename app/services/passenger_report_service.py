@@ -47,7 +47,7 @@ def get_date_wise_passenger_report(
         Journey, PassengerObservation.journey_id == Journey.id
     ).outerjoin(
         Bus, Journey.bus_id == Bus.id
-    ).join(
+    ).outerjoin(
         Upload, PassengerObservation.upload_id == Upload.id
     )
 
@@ -128,7 +128,7 @@ def get_date_wise_passenger_report(
     # Available dates, buses, journeys for UI dropdowns
     all_dates_query = db.session.query(
         func.distinct(func.date(func.coalesce(PassengerObservation.observation_time, Upload.capture_timestamp)))
-    ).join(Upload, PassengerObservation.upload_id == Upload.id).filter(
+    ).outerjoin(Upload, PassengerObservation.upload_id == Upload.id).filter(
         PassengerObservation.observation_time.isnot(None)
     ).order_by(desc(func.date(func.coalesce(PassengerObservation.observation_time, Upload.capture_timestamp)))).all()
 
@@ -182,16 +182,13 @@ def get_date_wise_passenger_report(
         crop_url = None
         has_valid_crop = False
         crop_warning = None
-        if obs.crop_path:
-            crop_url = f"/data/{obs.crop_path}"
-            full_crop_path = Path(Config.DATA_DIR) / obs.crop_path
-            try:
-                if full_crop_path.is_file():
-                    has_valid_crop = True
-                else:
-                    crop_warning = "Crop file missing from disk"
-            except Exception:
-                crop_warning = "Crop file inaccessible"
+        from app.services.cloud_sync_service import resolve_passenger_image_url
+        target_crop_ref = obs.crop_path or (p.thumbnail_path if p else None)
+        if target_crop_ref or orig_pid:
+            crop_url = resolve_passenger_image_url(target_crop_ref, orig_pid)
+            has_valid_crop = bool(crop_url)
+            if not has_valid_crop:
+                crop_warning = "Crop file missing from disk"
         else:
             crop_warning = "No face crop generated for this observation"
 
@@ -1509,9 +1506,9 @@ def get_identity_provenance(person_id, journey_id=None):
 
     thumb_url = None
     if identity and identity.thumbnail_path:
-        thumb_url = f"/data/{identity.thumbnail_path}"
+        thumb_url = resolve_passenger_image_url(identity.thumbnail_path, clean_pid)
     elif master_identity and master_identity.thumbnail_path:
-        thumb_url = f"/data/{master_identity.thumbnail_path}"
+        thumb_url = resolve_passenger_image_url(master_identity.thumbnail_path, canonical_person_id)
 
     return {
         "person_id": clean_pid,

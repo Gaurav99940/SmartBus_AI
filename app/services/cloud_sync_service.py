@@ -4,6 +4,7 @@ import re
 import json
 import shutil
 import base64
+import hashlib
 import requests
 import subprocess
 from datetime import datetime
@@ -25,13 +26,116 @@ from app.services.export_service import (
 
 
 # ============================================================================
-# 1. REMOTE IMAGE SERVER CLIENT (http://143.244.140.108:8060)
+# 1. REMOTE IMAGE SERVER CLIENT & CHECKSUM CACHE (http://143.244.140.108:8060)
 # ============================================================================
 
 def get_remote_server_base_url():
     """Returns the sanitized remote image server base URL."""
     url = getattr(Config, "REMOTE_IMAGE_SERVER_URL", "http://143.244.140.108:8060")
     return url.rstrip("/")
+
+
+def get_file_sha256(file_path):
+    """Calculates SHA-256 hash of a file for duplicate upload prevention."""
+    if not file_path or not os.path.isfile(file_path):
+        return None
+    h = hashlib.sha256()
+    try:
+        with open(file_path, "rb") as f:
+            while chunk := f.read(65536):
+                h.update(chunk)
+        return h.hexdigest()
+    except Exception:
+        return None
+
+
+def get_checksum_cache_path():
+    """Returns the persistent image checksum cache path."""
+    base_dir = getattr(Config, "SMARTBUS_DATA_DIR", Path(Config.BASE_DIR) / "smartbus-data")
+    base_dir.mkdir(parents=True, exist_ok=True)
+    return base_dir / "image_checksums.json"
+
+
+def load_image_checksum_cache():
+    """Loads previously uploaded image checksum mappings."""
+    cache_path = get_checksum_cache_path()
+    if cache_path.is_file():
+        try:
+            with open(cache_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+
+def save_image_checksum_cache(cache):
+    """Saves image checksum mappings to disk."""
+    cache_path = get_checksum_cache_path()
+    try:
+        with open(cache_path, "w", encoding="utf-8") as f:
+            json.dump(cache, f, indent=2)
+    except Exception as e:
+        print(f"[Checksum Cache Warning] Error saving cache: {e}")
+
+
+def resolve_passenger_image_url(image_ref, person_id=None):
+    """
+    Returns a clean, universally valid absolute or relative URL for a passenger image.
+    Ensures no double '/data/http' prefixes, provides automatic fallbacks across
+    local disk, smartbus-data thumbnails, and remote image server mappings.
+    """
+    if not image_ref and not person_id:
+        return None
+
+    clean_ref = (str(image_ref).strip() if image_ref else "")
+    # Strip accidental double prefix e.g. /data/http://143...
+    if clean_ref.startswith("/data/http://") or clean_ref.startswith("/data/https://"):
+        return clean_ref[6:]
+    if clean_ref.startswith("/data/data/"):
+        clean_ref = clean_ref[5:]
+
+    # 1. Direct absolute URL
+    if clean_ref.startswith("http://") or clean_ref.startswith("https://"):
+        return clean_ref
+
+    # 2. Check local file on disk
+    if clean_ref:
+        clean_p = clean_ref.lstrip("/").replace("data/", "", 1) if (clean_ref.startswith("/data/") or clean_ref.startswith("data/")) else clean_ref.lstrip("/")
+        full_local = Path(Config.DATA_DIR) / clean_p
+        if full_local.is_file():
+            return f"/data/{clean_p.replace('\\', '/')}"
+
+    # 3. Check smartbus-data/journeys/*/thumbnails/
+    sb_journeys = Path(Config.BASE_DIR) / "smartbus-data" / "journeys"
+    target_names = []
+    if clean_ref:
+        target_names.append(os.path.basename(clean_ref))
+    if person_id:
+        target_names.append(f"{person_id}_face.jpg")
+        target_names.append(f"{person_id}.jpg")
+
+    if sb_journeys.is_dir():
+        for j_folder in sb_journeys.iterdir():
+            thumbs_folder = j_folder / "thumbnails"
+            if thumbs_folder.is_dir():
+                for tname in target_names:
+                    tfile = thumbs_folder / tname
+                    if tfile.is_file():
+                        return f"/data/thumbnails/{tname}"
+
+    # 4. Check image checksum / remote URL cache
+    cache = load_image_checksum_cache()
+    for entry in cache.values():
+        if entry.get("orig_basename") in target_names or (entry.get("filename") and entry.get("filename") in target_names):
+            return entry.get("static_url") or entry.get("view_url")
+
+    # 5. Fallback URL
+    if person_id:
+        return f"/data/thumbnails/{person_id}_face.jpg"
+    if clean_ref:
+        return f"/data/{clean_ref.lstrip('/')}"
+
+    return None
 
 
 def test_remote_server_connection():
@@ -70,12 +174,14 @@ def upload_images_to_remote(file_paths, batch_size=15):
     """
     Bulk uploads multiple local image files to the remote server:
     POST /upload/bulk with multipart/form-data key 'files'.
+    Uses SHA-256 checksums to avoid uploading duplicate images.
     Returns:
       {
         "success": bool,
         "total_requested": int,
         "total_uploaded": int,
         "total_failed": int,
+        "already_cached": int,
         "uploaded_files": [...],
         "failed_files": [...],
         "url_mapping": { "orig_basename": "remote_view_url" }
@@ -89,19 +195,36 @@ def upload_images_to_remote(file_paths, batch_size=15):
             "total_requested": 0,
             "total_uploaded": 0,
             "total_failed": 0,
+            "already_cached": 0,
             "uploaded_files": [],
             "failed_files": [],
             "url_mapping": {}
         }
 
+    cache = load_image_checksum_cache()
+    url_mapping = {}
+    paths_to_upload = []
+    already_cached_count = 0
+
+    for p in valid_paths:
+        orig_base = os.path.basename(p)
+        sha = get_file_sha256(p)
+        if sha and sha in cache:
+            entry = cache[sha]
+            cached_url = entry.get("static_url") or entry.get("view_url")
+            if cached_url:
+                url_mapping[orig_base] = cached_url
+                already_cached_count += 1
+                continue
+        paths_to_upload.append(p)
+
     total_uploaded = 0
     total_failed = 0
     all_uploaded = []
     all_failed = []
-    url_mapping = {}
 
-    for i in range(0, len(valid_paths), batch_size):
-        chunk = valid_paths[i:i + batch_size]
+    for i in range(0, len(paths_to_upload), batch_size):
+        chunk = paths_to_upload[i:i + batch_size]
         files_payload = []
         open_handles = []
         try:
@@ -121,7 +244,7 @@ def upload_images_to_remote(file_paths, batch_size=15):
             resp = requests.post(
                 f"{base_url}/upload/bulk",
                 files=files_payload,
-                timeout=30
+                timeout=35
             )
 
             if resp.status_code == 200:
@@ -140,6 +263,16 @@ def upload_images_to_remote(file_paths, batch_size=15):
                     remote_url = up_info.get("static_url") or up_info.get("view_url")
                     if remote_url:
                         url_mapping[orig_base] = remote_url
+                        sha = get_file_sha256(orig_p)
+                        if sha:
+                            cache[sha] = {
+                                "filename": up_info.get("filename"),
+                                "orig_basename": orig_base,
+                                "static_url": up_info.get("static_url"),
+                                "view_url": up_info.get("view_url"),
+                                "size_bytes": up_info.get("size_bytes"),
+                                "uploaded_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+                            }
             else:
                 total_failed += len(chunk)
                 all_failed.extend([{"filename": os.path.basename(p), "error": f"HTTP {resp.status_code}"} for p in chunk])
@@ -153,11 +286,15 @@ def upload_images_to_remote(file_paths, batch_size=15):
                 except Exception:
                     pass
 
+    if all_uploaded:
+        save_image_checksum_cache(cache)
+
     return {
         "success": total_failed == 0,
         "total_requested": len(valid_paths),
         "total_uploaded": total_uploaded,
         "total_failed": total_failed,
+        "already_cached": already_cached_count,
         "uploaded_files": all_uploaded,
         "failed_files": all_failed,
         "url_mapping": url_mapping
@@ -384,10 +521,31 @@ def export_journey_sync_bundle(journey_id, upload_remote_crops=True, user_id=Non
                 if full_c.is_file():
                     source_crop_path = str(full_c)
 
+        if not source_crop_path:
+            # Check smartbus-data thumbnails folder
+            sb_thumb = thumbs_dir / f"{p.person_id}_face.jpg"
+            if sb_thumb.is_file():
+                source_crop_path = str(sb_thumb)
+
+        if not source_crop_path:
+            # Check data/crops folder
+            dc_thumb = Path(Config.DATA_DIR) / "crops" / f"{p.person_id}_face.jpg"
+            if dc_thumb.is_file():
+                source_crop_path = str(dc_thumb)
+
         if source_crop_path and os.path.isfile(source_crop_path):
             target_thumb_name = f"{p.person_id}_face.jpg"
             target_path = thumbs_dir / target_thumb_name
-            shutil.copy2(source_crop_path, target_path)
+            if str(source_crop_path) != str(target_path):
+                shutil.copy2(source_crop_path, target_path)
+
+            # Ensure local data/crops directory also has this thumbnail
+            crops_dir = Path(Config.DATA_DIR) / "crops"
+            crops_dir.mkdir(parents=True, exist_ok=True)
+            local_crop_copy = crops_dir / target_thumb_name
+            if not local_crop_copy.is_file():
+                shutil.copy2(source_crop_path, local_crop_copy)
+
             thumb_paths_to_upload.append(str(target_path))
             p_thumb_mapping[p.person_id] = target_thumb_name
 
@@ -405,6 +563,11 @@ def export_journey_sync_bundle(journey_id, upload_remote_crops=True, user_id=Non
     for p in passengers:
         local_thumb = p_thumb_mapping.get(p.person_id)
         remote_thumb = remote_url_map.get(local_thumb) if local_thumb else None
+        if remote_thumb:
+            p.thumbnail_path = remote_thumb
+            for o in p.observations:
+                if not o.crop_path or "http" in o.crop_path:
+                    o.crop_path = remote_thumb
 
         traveled_stops = []
         if p.traveled_stops_json:
@@ -448,6 +611,8 @@ def export_journey_sync_bundle(journey_id, upload_remote_crops=True, user_id=Non
 
     with open(jny_dir / "passengers.json", "w", encoding="utf-8") as f:
         json.dump(passengers_data, f, indent=2)
+
+    db.session.commit()
 
     # 4. Build attendance.json
     total_pax = len(passengers)
@@ -852,6 +1017,25 @@ def ingest_published_data(source_dir=None):
 
         # Ingest passengers.json
         p_file = jny_dir / "passengers.json"
+        crops_dir = Path(Config.DATA_DIR) / "crops"
+        crops_dir.mkdir(parents=True, exist_ok=True)
+
+        # Ensure an upload record exists to satisfy passenger_observations foreign key constraint
+        sync_upload = Upload.query.filter_by(journey_id=journey.id).first()
+        if not sync_upload:
+            sync_upload = Upload(
+                journey_id=journey.id,
+                bus_id=bus.id if bus else 1,
+                original_filename="sync_manifest.json",
+                file_path=str(p_file),
+                camera_angle="A",
+                status="processed",
+                capture_timestamp=datetime(2026, 10, 18, 18, 0, 0),
+                upload_timestamp=datetime(2026, 10, 18, 18, 0, 0)
+            )
+            db.session.add(sync_upload)
+            db.session.flush()
+
         if p_file.is_file():
             try:
                 with open(p_file, "r", encoding="utf-8") as pf:
@@ -862,10 +1046,20 @@ def ingest_published_data(source_dir=None):
                     if not pid:
                         continue
                     existing_p = PassengerIdentity.query.filter_by(journey_id=journey.id, person_id=pid).first()
-                    thumb_url = p_dict.get("remote_thumbnail_url") or p_dict.get("local_thumbnail_filename")
+                    local_fn = p_dict.get("local_thumbnail_filename") or f"{pid}_face.jpg"
+                    remote_url = p_dict.get("remote_thumbnail_url")
+                    thumb_url = remote_url or (f"crops/{local_fn}" if (crops_dir / local_fn).is_file() else local_fn)
 
+                    # Copy thumbnail from smartbus-data to local data/crops
+                    sb_thumb_src = jny_dir / "thumbnails" / local_fn
+                    if sb_thumb_src.is_file():
+                        local_crop_dest = crops_dir / local_fn
+                        if not local_crop_dest.is_file():
+                            shutil.copy2(sb_thumb_src, local_crop_dest)
+
+                    target_p = existing_p
                     if not existing_p:
-                        new_p = PassengerIdentity(
+                        target_p = PassengerIdentity(
                             journey_id=journey.id,
                             person_id=pid,
                             canonical_person_id=p_dict.get("canonical_person_id") or pid,
@@ -884,17 +1078,104 @@ def ingest_published_data(source_dir=None):
                             created_at=datetime.utcnow(),
                             updated_at=datetime.utcnow()
                         )
-                        db.session.add(new_p)
+                        db.session.add(target_p)
+                        db.session.flush()
                         updated_passengers += 1
                     else:
-                        if thumb_url and (not existing_p.thumbnail_path or "http" in thumb_url):
+                        if remote_url and (not existing_p.thumbnail_path or "http" not in existing_p.thumbnail_path):
+                            existing_p.thumbnail_path = remote_url
+                        elif not existing_p.thumbnail_path:
                             existing_p.thumbnail_path = thumb_url
                         existing_p.stops_traveled = p_dict.get("stops_traveled") or existing_p.stops_traveled
                         if p_dict.get("traveled_stops_detail"):
                             existing_p.traveled_stops_json = json.dumps(p_dict.get("traveled_stops_detail"))
                         updated_passengers += 1
+
+                    # Ingest passenger observations so Passenger Directory & reports display all crops and angles
+                    obs_summary = p_dict.get("observations_summary") or []
+                    effective_crop = target_p.thumbnail_path or f"crops/{local_fn}"
+
+                    if obs_summary:
+                        for obs_info in obs_summary:
+                            obs_id = obs_info.get("observation_id")
+                            obs_time_str = obs_info.get("time")
+                            obs_dt = None
+                            if obs_time_str:
+                                try:
+                                    obs_dt = datetime.strptime(obs_time_str, "%Y-%m-%d %H:%M:%S")
+                                except Exception:
+                                    pass
+                            if not obs_dt:
+                                obs_dt = target_p.first_seen_time or datetime.utcnow()
+
+                            existing_obs = PassengerObservation.query.get(obs_id) if obs_id else None
+                            if not existing_obs:
+                                new_obs = PassengerObservation(
+                                    id=obs_id if (obs_id and not PassengerObservation.query.get(obs_id)) else None,
+                                    upload_id=sync_upload.id,
+                                    journey_id=journey.id,
+                                    passenger_identity_id=target_p.id,
+                                    camera_angle=obs_info.get("camera_angle") or target_p.first_observed_angle or "A",
+                                    observation_time=obs_dt,
+                                    detection_confidence=float(obs_info.get("detection_confidence") or 0.85),
+                                    bbox_x=0,
+                                    bbox_y=0,
+                                    bbox_w=100,
+                                    bbox_h=100,
+                                    crop_path=effective_crop,
+                                    review_status=obs_info.get("review_status") or "CONFIRMED"
+                                )
+                                db.session.add(new_obs)
+                            else:
+                                if not existing_obs.crop_path or "crops/" not in existing_obs.crop_path:
+                                    existing_obs.crop_path = effective_crop
+                    else:
+                        # Fallback: ensure at least one observation exists for this passenger
+                        has_obs = PassengerObservation.query.filter_by(passenger_identity_id=target_p.id).first()
+                        if not has_obs:
+                            synth_obs = PassengerObservation(
+                                upload_id=sync_upload.id,
+                                journey_id=journey.id,
+                                passenger_identity_id=target_p.id,
+                                camera_angle=target_p.first_observed_angle or "A",
+                                observation_time=target_p.first_seen_time or datetime.utcnow(),
+                                detection_confidence=0.88,
+                                bbox_x=0,
+                                bbox_y=0,
+                                bbox_w=100,
+                                bbox_h=100,
+                                crop_path=effective_crop,
+                                review_status="CONFIRMED"
+                            )
+                            db.session.add(synth_obs)
+
             except Exception as e:
                 print(f"[Ingest Warning] Error loading passengers.json: {e}")
+
+        # Ingest stops.json
+        s_file = jny_dir / "stops.json"
+        if s_file.is_file():
+            try:
+                with open(s_file, "r", encoding="utf-8") as sf:
+                    s_list = json.load(sf)
+                for s_dict in s_list:
+                    s_num = s_dict.get("stop_number") or s_dict.get("stop_id")
+                    s_name = s_dict.get("stop_name") or f"Stop #{s_num}"
+                    if s_num and bus:
+                        existing_rs = RouteStop.query.filter_by(bus_id=bus.id, stop_order=s_num).first()
+                        if not existing_rs:
+                            rs = RouteStop(
+                                bus_id=bus.id,
+                                stop_order=s_num,
+                                stop_name=s_name,
+                                time_window=s_dict.get("scheduled_arrival") or "10:00 AM",
+                                location_address=s_dict.get("location_address") or s_name,
+                                latitude=s_dict.get("latitude") or 26.8467,
+                                longitude=s_dict.get("longitude") or 80.9462
+                            )
+                            db.session.add(rs)
+            except Exception as e:
+                print(f"[Ingest Warning] Error loading stops.json: {e}")
 
         ingested_count += 1
 
@@ -905,6 +1186,70 @@ def ingest_published_data(source_dir=None):
         "journeys_ingested": ingested_count,
         "passengers_synced": updated_passengers,
         "last_synced_at": manifest.get("last_synced_at")
+    }
+
+
+def get_sync_history(limit=25):
+    """
+    Returns history of cloud sync operations for the dashboard.
+    """
+    logs = CloudSyncLog.query.order_by(CloudSyncLog.id.desc()).limit(limit).all()
+    return [l.to_dict() for l in logs]
+
+
+def retry_failed_sync(journey_id=None):
+    """
+    Finds passengers whose thumbnails failed to upload or are missing remote URLs,
+    uploads them to the remote image server, and updates all JSON manifests and DB records.
+    """
+    target_jny = Journey.query.get(journey_id) if journey_id else Journey.query.order_by(Journey.id.desc()).first()
+    if not target_jny:
+        return {"success": False, "error": "No journey found to retry sync."}
+
+    passengers = PassengerIdentity.query.filter_by(journey_id=target_jny.id).all()
+    base_dir = getattr(Config, "SMARTBUS_DATA_DIR", Path(Config.BASE_DIR) / "smartbus-data")
+    thumbs_dir = base_dir / "journeys" / f"journey_{target_jny.id:03d}" / "thumbnails"
+
+    paths_to_upload = []
+    for p in passengers:
+        # Check if missing remote URL
+        if not p.thumbnail_path or not p.thumbnail_path.startswith("http"):
+            t_file = thumbs_dir / f"{p.person_id}_face.jpg"
+            if t_file.is_file():
+                paths_to_upload.append(str(t_file))
+
+    if not paths_to_upload:
+        return {
+            "success": True,
+            "message": "All passenger thumbnails are already synchronized with valid remote URLs.",
+            "total_retried": 0,
+            "total_uploaded": 0
+        }
+
+    up_res = upload_images_to_remote(paths_to_upload)
+    url_map = up_res.get("url_mapping", {})
+
+    updated_count = 0
+    for p in passengers:
+        tname = f"{p.person_id}_face.jpg"
+        if tname in url_map:
+            p.thumbnail_path = url_map[tname]
+            updated_count += 1
+            for o in p.observations:
+                o.crop_path = url_map[tname]
+
+    db.session.commit()
+
+    # Re-export journey bundle to refresh passengers.json and timeline.json
+    export_journey_sync_bundle(target_jny.id, upload_remote_crops=False)
+
+    return {
+        "success": True,
+        "message": f"Successfully retried and synchronized {updated_count} passenger thumbnails.",
+        "total_retried": len(paths_to_upload),
+        "total_uploaded": up_res.get("total_uploaded", 0),
+        "already_cached": up_res.get("already_cached", 0),
+        "updated_records": updated_count
     }
 
 

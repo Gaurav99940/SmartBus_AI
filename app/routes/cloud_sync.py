@@ -14,7 +14,10 @@ from app.services.cloud_sync_service import (
     export_journey_sync_bundle,
     sync_data_to_github,
     ingest_published_data,
-    get_latest_sync_status
+    get_latest_sync_status,
+    get_sync_history,
+    retry_failed_sync,
+    resolve_passenger_image_url
 )
 
 cloud_sync_bp = Blueprint("cloud_sync", __name__, url_prefix="/api")
@@ -89,6 +92,65 @@ def api_pull_and_ingest_reports():
     """
     res = ingest_published_data()
     return jsonify(res), 200 if res.get("success") else 400
+
+
+@cloud_sync_bp.route("/sync/history", methods=["GET"])
+def api_sync_history():
+    """Returns history of cloud synchronization jobs."""
+    limit = request.args.get("limit", 25, type=int)
+    history = get_sync_history(limit=limit)
+    return jsonify({"success": True, "history": history}), 200
+
+
+@cloud_sync_bp.route("/sync/retry-failed", methods=["POST"])
+def api_retry_failed_sync():
+    """Retries uploading and synchronizing any failed passenger thumbnails or reports."""
+    req_data = request.get_json(silent=True) or {}
+    journey_id = req_data.get("journey_id")
+    res = retry_failed_sync(journey_id=journey_id)
+    return jsonify(res), 200 if res.get("success") else 400
+
+
+@cloud_sync_bp.route("/sync/webhook", methods=["POST"])
+def api_sync_webhook():
+    """
+    Webhook endpoint to trigger automatic ingestion when a new dataset is pushed to GitHub.
+    Can be configured in GitHub repository Settings -> Webhooks.
+    """
+    import subprocess
+    try:
+        # Pull latest git commit if git is available
+        subprocess.run(["git", "pull", "origin", "main"], cwd=str(Config.BASE_DIR), capture_output=True, timeout=30)
+    except Exception as e:
+        print(f"[Webhook Notice] Git pull note: {e}")
+
+    res = ingest_published_data()
+    return jsonify({
+        "success": True,
+        "message": "Live server synchronized successfully via webhook.",
+        "ingest_result": res
+    }), 200
+
+
+@cloud_sync_bp.route("/sync/image-proxy", methods=["GET"])
+def api_image_proxy():
+    """
+    Proxies remote image server requests through the local backend to avoid mixed-content blocks
+    when the deployed website is served over HTTPS.
+    Usage: /api/sync/image-proxy?url=http://143.244.140.108:8060/static/images/...
+    """
+    import requests
+    from flask import Response
+    target_url = request.args.get("url")
+    if not target_url or not target_url.startswith("http"):
+        return jsonify({"error": "Valid target URL required."}), 400
+
+    try:
+        resp = requests.get(target_url, timeout=10)
+        content_type = resp.headers.get("Content-Type", "image/jpeg")
+        return Response(resp.content, status=resp.status_code, mimetype=content_type, headers={"Cache-Control": "public, max-age=86400"})
+    except Exception as e:
+        return jsonify({"error": f"Failed to fetch proxy image: {str(e)}"}), 502
 
 
 # ============================================================================

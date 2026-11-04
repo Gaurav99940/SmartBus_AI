@@ -593,7 +593,8 @@ function createSeatNode(seatCode, passenger) {
         const colorIdx = charCode % 5;
 
         // Resolved face photo crop path
-        const photoSrc = passenger.thumbnail_url || (passenger.thumbnail_path ? `/data/${passenger.thumbnail_path}` : null);
+        const rawSrc = passenger.thumbnail_url || passenger.thumbnail_path;
+        const photoSrc = rawSrc ? (rawSrc.startsWith('http') || rawSrc.startsWith('/') ? rawSrc : `/data/${rawSrc}`) : null;
 
         const faceHtml = photoSrc ? `
             <img src="${photoSrc}" class="seated-person-face-img" alt="${passenger.person_id}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">

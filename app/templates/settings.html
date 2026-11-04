@@ -178,38 +178,47 @@
 <div class="card" id="cloud-sync-section" style="margin-bottom:24px;">
     <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
         <span><i class="bi bi-cloud-arrow-up-fill text-primary"></i> GitHub Report Sync & Live Website Integration</span>
-        <div style="display:flex;gap:8px;">
-            <button class="btn-secondary" style="padding:4px 10px;font-size:12px;" onclick="loadCloudSyncStatus()"><i class="bi bi-arrow-clockwise"></i> Refresh Status</button>
-            <button class="btn-primary" style="padding:4px 12px;font-size:12px;background:#0284c7;border-color:#0284c7;" onclick="publishReportsFromSettings()"><i class="bi bi-cloud-upload-fill"></i> Publish Latest Reports</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn-secondary" style="padding:4px 10px;font-size:12px;" onclick="loadCloudSyncStatus()"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
+            <button class="btn-secondary" style="padding:4px 10px;font-size:12px;color:#d97706;" onclick="retryFailedSyncFromSettings()"><i class="bi bi-arrow-repeat"></i> Retry Failed Files</button>
+            <button class="btn-secondary" style="padding:4px 10px;font-size:12px;" onclick="pullCloudReportsFromSettings()"><i class="bi bi-cloud-download-fill text-primary"></i> Sync Now (Pull)</button>
+            <button class="btn-primary" style="padding:4px 12px;font-size:12px;background:#0284c7;border-color:#0284c7;" onclick="publishReportsFromSettings()"><i class="bi bi-cloud-upload-fill"></i> Publish All Data to GitHub</button>
         </div>
     </div>
 
     <!-- Status Overview Grid -->
-    <div style="display:grid;grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));gap:12px;margin-bottom:20px;">
+    <div style="display:grid;grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));gap:12px;margin-bottom:20px;">
         <div style="background:var(--bg-card-hover);padding:14px;border-radius:var(--radius-sm);border:1px solid var(--border-color);">
             <div style="font-size:11px;color:var(--text-muted);font-weight:600;">System Processing Role</div>
-            <div style="font-size:16px;font-weight:800;color:#059669;margin:4px 0;" id="cs-system-role">Local PC (AI Engine)</div>
+            <div style="font-size:15px;font-weight:800;color:#059669;margin:4px 0;" id="cs-system-role">Local PC (AI Engine)</div>
             <small style="font-size:11px;color:var(--text-muted);">Runs heavy models locally; publishes reports to cloud.</small>
         </div>
         <div style="background:var(--bg-card-hover);padding:14px;border-radius:var(--radius-sm);border:1px solid var(--border-color);">
             <div style="font-size:11px;color:var(--text-muted);font-weight:600;">GitHub Repository</div>
-            <div style="font-size:15px;font-weight:800;color:var(--text-main);margin:4px 0;word-break:break-all;" id="cs-github-repo">Gaurav99940/SmartBus_AI</div>
+            <div style="font-size:14px;font-weight:800;color:var(--text-main);margin:4px 0;word-break:break-all;" id="cs-github-repo">Gaurav99940/SmartBus_AI</div>
             <small style="font-size:11px;color:var(--text-muted);">Branch: <span id="cs-github-branch">main</span> | <span id="cs-github-token-badge" class="badge-status badge-present">Token Configured</span></small>
         </div>
         <div style="background:var(--bg-card-hover);padding:14px;border-radius:var(--radius-sm);border:1px solid var(--border-color);">
             <div style="font-size:11px;color:var(--text-muted);font-weight:600;">Remote Image Server</div>
-            <div style="font-size:15px;font-weight:800;color:#0284c7;margin:4px 0;" id="cs-remote-url">143.244.140.108:8060</div>
+            <div style="font-size:14px;font-weight:800;color:#0284c7;margin:4px 0;" id="cs-remote-url">143.244.140.108:8060</div>
             <small style="font-size:11px;" id="cs-remote-status-text"><span class="badge-status badge-present"><i class="bi bi-check-circle-fill"></i> Connected</span></small>
         </div>
         <div style="background:var(--bg-card-hover);padding:14px;border-radius:var(--radius-sm);border:1px solid var(--border-color);">
-            <div style="font-size:11px;color:var(--text-muted);font-weight:600;">Published Journeys & Reports</div>
-            <div style="font-size:18px;font-weight:800;color:var(--text-main);margin:4px 0;" id="cs-published-count">0 Journeys</div>
+            <div style="font-size:11px;color:var(--text-muted);font-weight:600;">Published Journeys</div>
+            <div style="font-size:18px;font-weight:800;color:var(--text-main);margin:4px 0;" id="cs-published-count">1 Journey</div>
             <small style="font-size:11px;color:var(--text-muted);">Last Sync: <span id="cs-last-sync-time">Never</span></small>
+        </div>
+        <div style="background:var(--bg-card-hover);padding:14px;border-radius:var(--radius-sm);border:1px solid var(--border-color);">
+            <div style="font-size:11px;color:var(--text-muted);font-weight:600;">Sync Metrics</div>
+            <div style="font-size:13px;font-weight:700;color:var(--text-main);margin:4px 0;">
+                <span id="cs-metric-records" style="color:#059669;">220</span> Records | <span id="cs-metric-images" style="color:#0284c7;">220</span> Images
+            </div>
+            <small style="font-size:11px;color:var(--text-muted);">Failed Files: <strong id="cs-failed-files-count" style="color:#dc2626;">0</strong></small>
         </div>
     </div>
 
     <!-- Live Sync Action Strip -->
-    <div style="background:var(--bg-app);border:1px solid var(--border-color);border-radius:var(--radius-sm);padding:14px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+    <div style="background:var(--bg-app);border:1px solid var(--border-color);border-radius:var(--radius-sm);padding:14px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:16px;">
         <div>
             <div style="font-size:13px;font-weight:700;color:var(--text-main);"><i class="bi bi-info-circle-fill text-primary"></i> Live Server Report Distribution</div>
             <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">
@@ -218,7 +227,33 @@
         </div>
         <div style="display:flex;gap:8px;">
             <button class="btn-secondary" style="padding:6px 12px;font-size:12px;" onclick="testRemoteServerConnection()"><i class="bi bi-wifi"></i> Ping Remote Server</button>
-            <button class="btn-secondary" style="padding:6px 12px;font-size:12px;" onclick="pullCloudReportsFromSettings()"><i class="bi bi-cloud-download"></i> Ingest Cloud Reports (Server Mode)</button>
+            <button class="btn-secondary" style="padding:6px 12px;font-size:12px;" onclick="loadSyncHistory()"><i class="bi bi-clock-history"></i> Sync History</button>
+        </div>
+    </div>
+
+    <!-- Collapsible Synchronization History -->
+    <div id="sync-history-container" style="border:1px solid var(--border-color);border-radius:var(--radius-sm);overflow:hidden;">
+        <div style="background:var(--bg-card-hover);padding:10px 14px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border-color);font-size:12px;font-weight:700;">
+            <span><i class="bi bi-journal-text text-primary"></i> Cloud Synchronization Audit History</span>
+            <span style="font-weight:normal;color:var(--text-muted);font-size:11px;">Recent automated and manual sync operations</span>
+        </div>
+        <div class="table-responsive" style="max-height:220px;overflow-y:auto;">
+            <table class="custom-table" style="font-size:11px;">
+                <thead>
+                    <tr>
+                        <th>Timestamp</th>
+                        <th>Journey</th>
+                        <th>Type</th>
+                        <th>Status</th>
+                        <th>Records / Files</th>
+                        <th>Method</th>
+                        <th>Details</th>
+                    </tr>
+                </thead>
+                <tbody id="sync-history-tbody">
+                    <tr><td colspan="7" class="text-center py-3" style="color:var(--text-muted);">Loading sync history...</td></tr>
+                </tbody>
+            </table>
         </div>
     </div>
 </div>
@@ -815,6 +850,59 @@ async function deleteSelectedRemoteImages() {
 function escapeHtml(text) {
     if (!text) return "";
     return text.toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+async function loadSyncHistory() {
+    const tbody = document.getElementById("sync-history-tbody");
+    if (!tbody) return;
+    tbody.innerHTML = `<tr><td colspan="7" class="text-center py-3"><div class="spinner-border spinner-border-sm text-primary"></div> Loading sync history...</td></tr>`;
+    try {
+        const res = await fetch("/api/sync/history");
+        const logs = await res.json();
+        if (!Array.isArray(logs) || logs.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="7" class="text-center py-3 text-muted">No synchronization records logged yet.</td></tr>`;
+            return;
+        }
+        tbody.innerHTML = logs.map(l => {
+            const statusBadge = l.status === "SUCCESS"
+                ? `<span class="badge bg-success">SUCCESS</span>`
+                : (l.status === "FAILED" ? `<span class="badge bg-danger">FAILED</span>` : `<span class="badge bg-warning text-dark">${l.status}</span>`);
+            const det = typeof l.details === "object" ? JSON.stringify(l.details) : (l.details || "-");
+            return `
+                <tr>
+                    <td><code>${escapeHtml(l.timestamp || '-')}</code></td>
+                    <td><strong>${escapeHtml(l.action || '-')}</strong></td>
+                    <td>${escapeHtml(l.target || '-')}</td>
+                    <td>${escapeHtml(l.journey_code || (l.journey_id ? '#' + l.journey_id : '-'))}</td>
+                    <td>${statusBadge}</td>
+                    <td><small style="color:var(--text-muted);word-break:break-all;">${escapeHtml(det)}</small></td>
+                    <td><button class="btn-sm btn-secondary" onclick="retryFailedSyncFromSettings(${l.journey_id || 'null'})" title="Retry"><i class="bi bi-arrow-repeat"></i></button></td>
+                </tr>
+            `;
+        }).join("");
+    } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="7" class="text-center py-3 text-danger"><i class="bi bi-exclamation-triangle"></i> Failed to load sync history: ${escapeHtml(e.message)}</td></tr>`;
+    }
+}
+
+async function retryFailedSyncFromSettings(journeyId) {
+    showToast("Retrying synchronization...", "info");
+    try {
+        const res = await fetch("/api/sync/retry-failed", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ journey_id: journeyId })
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast(data.message || `Retried ${data.total_retried} files successfully!`, "success");
+            loadSyncHistory();
+        } else {
+            showToast(data.error || "Retry sync failed.", "error");
+        }
+    } catch (e) {
+        showToast("Retry sync error: " + e.message, "error");
+    }
 }
 </script>
 {% endblock %}

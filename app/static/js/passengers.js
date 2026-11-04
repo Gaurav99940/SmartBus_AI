@@ -8,6 +8,15 @@ let currentGalleryItems = []; // Ordered list of all gallery items currently dis
 let currentModalImageIndex = -1;
 let currentZoomLevel = 1.0;
 
+function formatPassengerPhotoUrl(pathOrUrl) {
+    if (!pathOrUrl) return null;
+    const s = String(pathOrUrl).trim();
+    if (s.startsWith('http://') || s.startsWith('https://')) return s;
+    if (s.startsWith('/data/http://') || s.startsWith('/data/https://')) return s.substring(6);
+    if (s.startsWith('/')) return s;
+    return `/data/${s}`;
+}
+
 document.addEventListener("DOMContentLoaded", () => {
     initFilters();
     loadDateWiseReport();
@@ -404,9 +413,11 @@ function renderDateSections(data) {
                     const seenPids = new Set();
                     const activeGalleryCrops = [];
                     (dateGroup.gallery_crops || []).forEach(c => {
-                        const pid = c.canonical_person_id || c.person_id;
-                        if (pid && !seenPids.has(pid) && !c.is_merged) {
+                        const pid = String(c.canonical_person_id || c.person_id || "").trim();
+                        const rawPid = String(c.person_id || "").trim();
+                        if (pid && !seenPids.has(pid) && !seenPids.has(rawPid) && !c.is_merged) {
                             seenPids.add(pid);
+                            if (rawPid) seenPids.add(rawPid);
                             activeGalleryCrops.push(c);
                         }
                     });
@@ -491,8 +502,9 @@ function renderUniquePassengersSection(dateGroup) {
                         ${uniqueList.map(u => {
                             const globalIdx = currentGalleryItems.findIndex(i => i.person_id === u.person_id);
                             let thumbHtml = '';
-                            if (u.has_valid_crop && u.best_crop_url) {
-                                thumbHtml = `<img src="${u.best_crop_url}" class="table-crop-thumb" onclick="openImageEnlargeModal(${globalIdx >= 0 ? globalIdx : 0})" alt="${u.person_id}" title="Click to enlarge photo">`;
+                            const resolvedThumb = formatPassengerPhotoUrl(u.best_crop_url || `/data/${u.person_id}_face.jpg`);
+                            if (resolvedThumb) {
+                                thumbHtml = `<img src="${resolvedThumb}" class="table-crop-thumb" onclick="openImageEnlargeModal(${globalIdx >= 0 ? globalIdx : 0})" alt="${u.person_id}" title="Click to enlarge photo" onerror="this.onerror=null;this.parentElement.innerHTML='<div class=\\'table-crop-placeholder\\'>${u.person_id ? u.person_id.substring(0, 2) : 'P'}</div>';">`;
                             } else {
                                 thumbHtml = `<div class="table-crop-placeholder" onclick="openImageEnlargeModal(${globalIdx >= 0 ? globalIdx : 0})">${u.person_id.substring(0, 2)}</div>`;
                             }
@@ -571,18 +583,19 @@ function renderCropGalleryCards(crops, dateStr) {
         const globalIdx = currentGalleryItems.findIndex(i => i.observation_id === crop.observation_id || i.person_id === crop.person_id);
 
         let imgHtml = '';
-        if (crop.has_valid_crop && crop.crop_url) {
+        const finalCropUrl = formatPassengerPhotoUrl(crop.crop_url || `/data/${crop.person_id}_face.jpg`);
+        if (finalCropUrl) {
             imgHtml = `
                 <div class="crop-img-container" onclick="openImageEnlargeModal(${globalIdx >= 0 ? globalIdx : 0})" title="Click to enlarge image">
-                    <img src="${crop.crop_url}" class="crop-img" alt="${crop.person_id}" loading="lazy" onerror="this.onerror=null;this.parentElement.innerHTML='<div class=\\'crop-placeholder-missing\\'><i class=\\'bi bi-image-alt\\'></i><span>Crop Missing</span></div>';">
+                    <img src="${finalCropUrl}" class="crop-img" alt="${crop.person_id}" loading="lazy" onerror="this.onerror=null;this.parentElement.innerHTML='<div class=\\'crop-placeholder-empty\\'><i class=\\'bi bi-person\\'></i><span>${crop.person_id}</span></div>';">
                     <div class="crop-zoom-hover"><i class="bi bi-arrows-fullscreen"></i></div>
                 </div>
             `;
         } else {
             imgHtml = `
-                <div class="crop-img-container crop-placeholder-missing" onclick="openImageEnlargeModal(${globalIdx >= 0 ? globalIdx : 0})" title="Click to view details (Image missing)">
-                    <i class="bi bi-exclamation-triangle text-warning" style="font-size:24px;"></i>
-                    <span style="font-size:10px;color:var(--text-muted);margin-top:4px;">No Crop File</span>
+                <div class="crop-img-container crop-placeholder-missing" onclick="openImageEnlargeModal(${globalIdx >= 0 ? globalIdx : 0})" title="Click to view details">
+                    <i class="bi bi-person text-primary" style="font-size:24px;"></i>
+                    <span style="font-size:10px;color:var(--text-muted);margin-top:4px;">${crop.person_id}</span>
                 </div>
             `;
         }
@@ -657,8 +670,9 @@ function renderAngleTable(observations, angleTitle) {
                         const isMerged = obs.is_merged && obs.canonical_person_id && obs.canonical_person_id !== obs.person_id;
                         
                         let thumbHtml = '';
-                        if (obs.has_valid_crop && obs.crop_url) {
-                            thumbHtml = `<img src="${obs.crop_url}" class="table-crop-thumb" onclick="openImageEnlargeModal(${globalIdx})" alt="${obs.person_id}">`;
+                        const resolvedObsCrop = formatPassengerPhotoUrl(obs.crop_url || `/data/${obs.person_id}_face.jpg`);
+                        if (resolvedObsCrop) {
+                            thumbHtml = `<img src="${resolvedObsCrop}" class="table-crop-thumb" onclick="openImageEnlargeModal(${globalIdx})" alt="${obs.person_id}" onerror="this.onerror=null;this.parentElement.innerHTML='<div class=\\'table-crop-placeholder\\'>${obs.person_id ? obs.person_id.substring(0, 2) : 'P'}</div>';">`;
                         } else {
                             thumbHtml = `<div class="table-crop-placeholder" onclick="openImageEnlargeModal(${globalIdx})">${obs.person_id.substring(0, 2)}</div>`;
                         }
@@ -975,8 +989,9 @@ function updateEnlargeModalContent(item) {
         counterEl.textContent = `${currentModalImageIndex + 1} / ${currentGalleryItems.length}`;
     }
 
-    if (item.has_valid_crop && item.crop_url) {
-        imgEl.src = item.crop_url;
+    const modalCropUrl = formatPassengerPhotoUrl(item.crop_url || item.best_crop_url || `/data/${item.person_id}_face.jpg`);
+    if (modalCropUrl) {
+        imgEl.src = modalCropUrl;
         imgEl.style.display = "block";
         imgEl.style.transform = `scale(${currentZoomLevel})`;
         if (placeholderEl) placeholderEl.style.display = "none";
