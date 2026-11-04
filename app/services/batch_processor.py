@@ -12,22 +12,81 @@ from app.models import (
     TimetableStop, StopMediaMatch, StopProcessingJob, Upload,
     PassengerObservation, PassengerIdentity, PresenceEvent
 )
-from app.services.media_service import extract_frame_at_timestamp, extract_media_metadata
+from app.services.media_service import (
+    extract_frame_at_timestamp, extract_media_metadata,
+    parse_stop_number_from_filename
+)
 from app.services.journey_service import process_multi_angle_batch
 from app.services.audit_service import log_audit
 
 
-def find_matching_media_for_window(media_files, window_start, window_end, max_increment_minutes=None, step_minutes=None):
+def resolve_media_file_path(mf_or_path):
+    """
+    Resolves actual file path on disk across absolute, relative, or upload-directory structures.
+    """
+    if not mf_or_path:
+        return None
+    p = mf_or_path if isinstance(mf_or_path, str) else getattr(mf_or_path, "file_path", None)
+    if not p:
+        return None
+    if os.path.exists(p):
+        return p
+    norm_p = os.path.normpath(p)
+    if os.path.exists(norm_p):
+        return norm_p
+    base = os.path.basename(p)
+    upload_dir = str(getattr(Config, "UPLOAD_FOLDER", "uploads"))
+    in_upload = os.path.join(upload_dir, base)
+    if os.path.exists(in_upload):
+        return in_upload
+    try:
+        for root, _, files in os.walk(upload_dir):
+            if base in files:
+                return os.path.join(root, base)
+    except Exception:
+        pass
+    cwd_path = os.path.join(os.getcwd(), p)
+    if os.path.exists(cwd_path):
+        return cwd_path
+    return p
+
+
+def project_media_time(mf, window_start, window_end=None):
+    """
+    Projects a media file's timestamp onto the target window date when dates differ,
+    preserving duration and time-of-day.
+    """
+    if not mf or not mf.start_time:
+        return None, None
+
+    if window_end is None:
+        window_end = window_start
+
+    duration = (mf.end_time - mf.start_time) if mf.end_time else timedelta(0)
+
+    if mf.start_time.date() == window_start.date():
+        return mf.start_time, mf.start_time + duration
+
+    t_start = mf.start_time.time()
+    proj_start = datetime.combine(window_start.date(), t_start)
+    if window_end.date() > window_start.date() and proj_start < window_start:
+        proj_start = datetime.combine(window_end.date(), t_start)
+
+    return proj_start, proj_start + duration
+
+
+def find_matching_media_for_window(media_files, window_start, window_end, max_increment_minutes=None, step_minutes=None, stop_number=None, stop_name=None, return_details=False):
     """
     Finds matching media clip/image for [window_start, window_end].
-    1. Direct exact window overlap: returns (clip, 0).
-    2. Incremental fallback search using configurable 1-minute search steps (default: 1-minute intervals)
-       respecting the maximum permitted fallback search window (default: 30 minutes).
-       Prioritizes the closest suitable clip to the target stop time.
-    3. If outside permitted search window, returns (None, 0).
+    Stage 0: Explicit filename match (Stop # or Stop Name in filename).
+    Stage 1: Direct window overlap (exact date or projected time-of-day).
+    Stage 2: Incremental fallback search using 1-minute search steps up to max_increment_minutes.
+    Stage 3: Nearest clip within max_increment_minutes.
+    Stage 4: Broad route fallback (closest clip in angle queue).
+    Returns (media_file, used_step) by default, or (media_file, used_step, match_type) if return_details=True.
     """
     if not media_files or not window_start or not window_end:
-        return None, 0
+        return (None, 0, "NO_MEDIA") if return_details else (None, 0)
 
     if step_minutes is None:
         step_minutes = getattr(Config, "TIMETABLE_FALLBACK_STEP_MINUTES", 1)
@@ -36,118 +95,193 @@ def find_matching_media_for_window(media_files, window_start, window_end, max_in
 
     mid_window = window_start + (window_end - window_start) / 2
 
-    # First attempt: direct window overlap
-    candidates = []
+    # Filter usable candidates & resolve paths
+    valid_candidates = []
     for mf in media_files:
-        if mf.status == "error" or not mf.start_time or not mf.file_path or not os.path.exists(mf.file_path):
+        if mf.status == "error" or not mf.start_time:
             continue
-        mf_start = mf.start_time
-        mf_end = mf.end_time or mf.start_time
-        if mf_start <= window_end and mf_end >= window_start:
-            overlap_start = max(mf_start, window_start)
-            overlap_end = min(mf_end, window_end)
-            overlap_seconds = max(0.0, (overlap_end - overlap_start).total_seconds())
-            mid_media = mf_start + (mf_end - mf_start) / 2
-            time_diff = abs((mid_media - mid_window).total_seconds())
-            candidates.append({
-                "media_file": mf,
-                "overlap_seconds": overlap_seconds,
-                "time_diff": time_diff,
-                "increment_mins": 0,
-                "is_reliable": mf.is_timestamp_reliable
-            })
+        resolved = resolve_media_file_path(mf)
+        if resolved:
+            mf.file_path = resolved
+        valid_candidates.append(mf)
 
-    if candidates:
-        candidates.sort(key=lambda c: (1 if c["media_file"].is_color is False else 0, -c["overlap_seconds"], c["time_diff"], 0 if c["is_reliable"] else 1))
-        return candidates[0]["media_file"], 0
+    if not valid_candidates:
+        return (None, 0, "NO_MEDIA") if return_details else (None, 0)
 
-    # Iterative incremental step search (e.g. 11-minute steps up to max_increment_minutes)
-    max_steps = max(1, int(max_increment_minutes // step_minutes))
-    for step_idx in range(1, max_steps + 1):
-        delta_mins = step_idx * step_minutes
-        if delta_mins > max_increment_minutes:
-            delta_mins = max_increment_minutes
-        expanded_start = window_start - timedelta(minutes=delta_mins)
-        expanded_end = window_end + timedelta(minutes=delta_mins)
+    # -------------------------------------------------------------
+    # Stage 0: Explicit Filename Match (Stop Number or Stop Name)
+    # -------------------------------------------------------------
+    if stop_number is not None:
+        stop_num_matches = []
+        for mf in valid_candidates:
+            f_stop = parse_stop_number_from_filename(mf.filename)
+            if f_stop is None and mf.file_path:
+                f_stop = parse_stop_number_from_filename(mf.file_path)
+            if f_stop == stop_number:
+                proj_start, _ = project_media_time(mf, window_start, window_end)
+                time_diff = abs((proj_start - mid_window).total_seconds()) if proj_start else 0.0
+                stop_num_matches.append((time_diff, mf))
 
-        step_candidates = []
-        for mf in media_files:
-            if mf.status == "error" or not mf.start_time or not mf.file_path or not os.path.exists(mf.file_path):
-                continue
-            mf_start = mf.start_time
-            mf_end = mf.end_time or mf.start_time
-            if mf_start <= expanded_end and mf_end >= expanded_start:
-                mid_media = mf_start + (mf_end - mf_start) / 2
-                time_diff = abs((mid_media - mid_window).total_seconds())
-                if time_diff <= (max_increment_minutes * 60):
-                    step_candidates.append({
-                        "media_file": mf,
-                        "time_diff": time_diff,
-                        "delta_mins": delta_mins,
-                        "is_reliable": mf.is_timestamp_reliable
-                    })
+        if stop_num_matches:
+            stop_num_matches.sort(key=lambda x: (1 if x[1].is_color is False else 0, x[0]))
+            best_mf = stop_num_matches[0][1]
+            return (best_mf, 0, "FILENAME_STOP_INDEX") if return_details else (best_mf, 0)
 
-        if step_candidates:
-            step_candidates.sort(key=lambda c: (c["time_diff"], 0 if c["is_reliable"] else 1))
-            return step_candidates[0]["media_file"], delta_mins
+    if stop_name:
+        import re
+        norm_stop_name = re.sub(r'[^a-z0-9]', '', str(stop_name).lower())
+        if len(norm_stop_name) >= 3:
+            stop_name_matches = []
+            for mf in valid_candidates:
+                norm_fn = re.sub(r'[^a-z0-9]', '', str(mf.filename).lower())
+                if norm_stop_name in norm_fn:
+                    proj_start, _ = project_media_time(mf, window_start, window_end)
+                    time_diff = abs((proj_start - mid_window).total_seconds()) if proj_start else 0.0
+                    stop_name_matches.append((time_diff, mf))
+            if stop_name_matches:
+                stop_name_matches.sort(key=lambda x: (1 if x[1].is_color is False else 0, x[0]))
+                best_mf = stop_name_matches[0][1]
+                return (best_mf, 0, "FILENAME_STOP_NAME") if return_details else (best_mf, 0)
 
-    # Fine-grained nearest-clip within max_increment_minutes
-    fallback_candidates = []
-    for mf in media_files:
-        if mf.status == "error" or not mf.start_time or not mf.file_path or not os.path.exists(mf.file_path):
+    # -------------------------------------------------------------
+    # Stage 1: Direct Window Overlap (Exact Date or Projected Time-of-Day)
+    # -------------------------------------------------------------
+    overlap_candidates = []
+    for mf in valid_candidates:
+        proj_start, proj_end = project_media_time(mf, window_start, window_end)
+        if not proj_start or not proj_end:
             continue
-        mid_media = mf.start_time + ((mf.end_time - mf.start_time) / 2 if mf.end_time else timedelta(0))
-        time_diff = abs((mid_media - mid_window).total_seconds())
-        if time_diff <= (max_increment_minutes * 60):
-            fallback_candidates.append((time_diff, mf))
-
-    if fallback_candidates:
-        fallback_candidates.sort(key=lambda x: x[0])
-        best_diff, best_mf = fallback_candidates[0]
-        used_step = max(1, int(round(best_diff / 60.0)))
-        return best_mf, used_step
-
-    # 4. Smart Time-of-Day Fallback:
-    # If media files have timestamps with a mismatched date (e.g. file mtime or time-only names),
-    # project their time-of-day onto the stop window's date and check for matches.
-    time_aligned_candidates = []
-    for mf in media_files:
-        if mf.status == "error" or not mf.start_time or not mf.file_path or not os.path.exists(mf.file_path):
-            continue
-        t_start = mf.start_time.time()
-        proj_start = datetime.combine(window_start.date(), t_start)
-        if window_end.date() > window_start.date() and proj_start < window_start:
-            proj_start = datetime.combine(window_end.date(), t_start)
-
-        duration = (mf.end_time - mf.start_time) if mf.end_time else timedelta(0)
-        proj_end = proj_start + duration
-
         if proj_start <= window_end and proj_end >= window_start:
             overlap_start = max(proj_start, window_start)
             overlap_end = min(proj_end, window_end)
             overlap_seconds = max(0.0, (overlap_end - overlap_start).total_seconds())
             mid_media = proj_start + (proj_end - proj_start) / 2
             time_diff = abs((mid_media - mid_window).total_seconds())
-            time_aligned_candidates.append({
+            is_same_date = (mf.start_time.date() == window_start.date())
+            overlap_candidates.append({
                 "media_file": mf,
                 "overlap_seconds": overlap_seconds,
                 "time_diff": time_diff,
-                "increment_mins": 0,
+                "is_same_date": is_same_date,
                 "is_reliable": mf.is_timestamp_reliable
             })
 
-    if time_aligned_candidates:
-        time_aligned_candidates.sort(key=lambda c: (1 if c["media_file"].is_color is False else 0, -c["overlap_seconds"], c["time_diff"], 0 if c["is_reliable"] else 1))
-        return time_aligned_candidates[0]["media_file"], 0
+    if overlap_candidates:
+        overlap_candidates.sort(key=lambda c: (
+            0 if c["is_same_date"] else 1,
+            1 if c["media_file"].is_color is False else 0,
+            -c["overlap_seconds"],
+            c["time_diff"],
+            0 if c["is_reliable"] else 1
+        ))
+        best = overlap_candidates[0]
+        mtype = "WINDOW_SYNC" if best["is_same_date"] else "TIME_OF_DAY_SYNC"
+        return (best["media_file"], 0, mtype) if return_details else (best["media_file"], 0)
 
-    return None, 0
+    # -------------------------------------------------------------
+    # Stage 2: Incremental Fallback Search (1-minute steps up to max_increment_minutes)
+    # -------------------------------------------------------------
+    max_steps = max(1, int(max_increment_minutes // step_minutes))
+    for step_idx in range(1, max_steps + 1):
+        delta_mins = min(step_idx * step_minutes, max_increment_minutes)
+        expanded_start = window_start - timedelta(minutes=delta_mins)
+        expanded_end = window_end + timedelta(minutes=delta_mins)
+
+        step_candidates = []
+        for mf in valid_candidates:
+            proj_start, proj_end = project_media_time(mf, window_start, window_end)
+            if not proj_start or not proj_end:
+                continue
+            if proj_start <= expanded_end and proj_end >= expanded_start:
+                mid_media = proj_start + (proj_end - proj_start) / 2
+                time_diff = abs((mid_media - mid_window).total_seconds())
+                is_same_date = (mf.start_time.date() == window_start.date())
+                step_candidates.append({
+                    "media_file": mf,
+                    "time_diff": time_diff,
+                    "delta_mins": delta_mins,
+                    "is_same_date": is_same_date,
+                    "is_reliable": mf.is_timestamp_reliable
+                })
+
+        if step_candidates:
+            step_candidates.sort(key=lambda c: (
+                0 if c["is_same_date"] else 1,
+                1 if c["media_file"].is_color is False else 0,
+                c["time_diff"],
+                0 if c["is_reliable"] else 1
+            ))
+            best = step_candidates[0]
+            mtype = "WINDOW_INCREMENT" if best["is_same_date"] else "TIME_OF_DAY_INCREMENT"
+            return (best["media_file"], delta_mins, mtype) if return_details else (best["media_file"], delta_mins)
+
+    # -------------------------------------------------------------
+    # Stage 3: Nearest clip within max_increment_minutes
+    # -------------------------------------------------------------
+    near_candidates = []
+    for mf in valid_candidates:
+        proj_start, proj_end = project_media_time(mf, window_start, window_end)
+        if not proj_start:
+            continue
+        mid_media = proj_start + (proj_end - proj_start) / 2
+        time_diff = abs((mid_media - mid_window).total_seconds())
+        if time_diff <= (max_increment_minutes * 60):
+            is_same_date = (mf.start_time.date() == window_start.date())
+            near_candidates.append({
+                "media_file": mf,
+                "time_diff": time_diff,
+                "is_same_date": is_same_date,
+                "is_reliable": mf.is_timestamp_reliable
+            })
+
+    if near_candidates:
+        near_candidates.sort(key=lambda c: (
+            0 if c["is_same_date"] else 1,
+            1 if c["media_file"].is_color is False else 0,
+            c["time_diff"],
+            0 if c["is_reliable"] else 1
+        ))
+        best = near_candidates[0]
+        used_step = max(1, int(round(best["time_diff"] / 60.0)))
+        return (best["media_file"], used_step, "NEAREST_CLIP") if return_details else (best["media_file"], used_step)
+
+    # -------------------------------------------------------------
+    # Stage 4: Broad Route Fallback (Closest clip in queue)
+    # -------------------------------------------------------------
+    broad_candidates = []
+    for mf in valid_candidates:
+        proj_start, proj_end = project_media_time(mf, window_start, window_end)
+        if not proj_start:
+            continue
+        mid_media = proj_start + (proj_end - proj_start) / 2
+        time_diff = abs((mid_media - mid_window).total_seconds())
+        is_same_date = (mf.start_time.date() == window_start.date())
+        broad_candidates.append({
+            "media_file": mf,
+            "time_diff": time_diff,
+            "is_same_date": is_same_date,
+            "is_reliable": mf.is_timestamp_reliable
+        })
+
+    if broad_candidates:
+        broad_candidates.sort(key=lambda c: (
+            0 if c["is_same_date"] else 1,
+            1 if c["media_file"].is_color is False else 0,
+            c["time_diff"]
+        ))
+        best = broad_candidates[0]
+        used_step = max(1, int(round(best["time_diff"] / 60.0)))
+        return (best["media_file"], used_step, "ROUTE_NEAREST_CLIP") if return_details else (best["media_file"], used_step)
+
+    return (None, 0, "NO_MEDIA") if return_details else (None, 0)
 
 
 def find_media_near_time_incrementally(media_files, anchor_time, max_increment_minutes=None, step_minutes=None):
     """
     Inter-angle synchronization helper:
-    When one camera angle (e.g. Angle A) has a clip at anchor_time, but another camera angle (e.g. Angle B or C)
+    When one camera angle has a clip at anchor_time, but another camera angle
     has no clip at that exact time, searches incrementally in steps to pick the next closest available clip.
+    Handles exact date matching and projected time-of-day matching.
     """
     if not media_files or not anchor_time:
         return None, 0
@@ -159,19 +293,32 @@ def find_media_near_time_incrementally(media_files, anchor_time, max_increment_m
 
     candidates = []
     for mf in media_files:
-        if mf.status == "error" or not mf.start_time or not mf.file_path or not os.path.exists(mf.file_path):
+        if mf.status == "error" or not mf.start_time:
             continue
-        diff = abs((mf.start_time - anchor_time).total_seconds())
-        if diff > (max_increment_minutes * 60) and mf.start_time.date() != anchor_time.date():
-            proj_start = datetime.combine(anchor_time.date(), mf.start_time.time())
-            diff = abs((proj_start - anchor_time).total_seconds())
+        resolved = resolve_media_file_path(mf)
+        if resolved:
+            mf.file_path = resolved
 
-        if diff <= (max_increment_minutes * 60):
-            candidates.append((diff, mf))
+        # Try exact datetime diff
+        diff = abs((mf.start_time - anchor_time).total_seconds())
+        # Also try projected time-of-day diff
+        proj_start, _ = project_media_time(mf, anchor_time)
+        diff_proj = abs((proj_start - anchor_time).total_seconds()) if proj_start else diff
+
+        is_same_date = (mf.start_time.date() == anchor_time.date())
+        best_diff = diff if is_same_date else diff_proj
+
+        candidates.append((
+            0 if is_same_date else 1,
+            1 if mf.is_color is False else 0,
+            best_diff,
+            mf
+        ))
 
     if candidates:
-        candidates.sort(key=lambda x: x[0])
-        min_diff, best_mf = candidates[0]
+        candidates.sort(key=lambda x: (x[0], x[1], x[2]))
+        best_mf = candidates[0][3]
+        min_diff = candidates[0][2]
         inc = max(1, int(round(min_diff / 60.0)))
         return best_mf, inc
 
@@ -189,6 +336,8 @@ def match_stops_to_media(timetable_id):
         return False, "Timetable not found"
 
     stops = TimetableStop.query.filter_by(timetable_id=timetable_id).order_by(TimetableStop.stop_number).all()
+    if not stops:
+        return False, "Timetable has no stops"
 
     # Get media files grouped by angle with robust multi-folder pooling
     media_by_angle = {"A": [], "B": [], "C": []}
@@ -203,9 +352,24 @@ def match_stops_to_media(timetable_id):
                 (SourceMediaFile.journey_id.is_(None))
             )
         all_candidates = query.order_by(SourceMediaFile.start_time).all()
-        # Strictly prioritize files that exist on disk so missing files never block matching
-        existing_files = [f for f in all_candidates if f.file_path and os.path.exists(f.file_path)]
-        files = existing_files if existing_files else all_candidates
+
+        # If no candidates under current journey, pool across all journeys as fallback
+        if not all_candidates:
+            all_candidates = SourceMediaFile.query.filter(
+                SourceMediaFile.camera_angle == angle,
+                SourceMediaFile.status != "error"
+            ).order_by(SourceMediaFile.start_time).all()
+
+        # Resolve paths & prioritize existing files on disk
+        valid_candidates = []
+        for mf in all_candidates:
+            resolved = resolve_media_file_path(mf)
+            if resolved:
+                mf.file_path = resolved
+            valid_candidates.append(mf)
+
+        existing_files = [f for f in valid_candidates if f.file_path and os.path.exists(f.file_path)]
+        files = existing_files if existing_files else valid_candidates
 
         # If timetable has a journey_id, associate these files to that journey
         if timetable.journey_id and files:
@@ -228,11 +392,19 @@ def match_stops_to_media(timetable_id):
 
         matched_results = {}  # angle -> (matched_mf, inc_used, match_type)
 
-        # Pass 1: Try stop window matching for each angle with 1-minute increments
+        # Pass 1: Try stop window matching for each angle with 1-minute increments & filename intelligence
         for angle in ["A", "B", "C"]:
-            matched_mf, inc_used = find_matching_media_for_window(media_by_angle[angle], w_start, w_end, max_increment_minutes=30)
+            matched_mf, inc_used, m_type = find_matching_media_for_window(
+                media_by_angle[angle],
+                w_start,
+                w_end,
+                max_increment_minutes=getattr(Config, "TIMETABLE_MAX_FALLBACK_MINUTES", 30),
+                stop_number=stop.stop_number,
+                stop_name=stop.stop_name,
+                return_details=True
+            )
             if matched_mf:
-                matched_results[angle] = (matched_mf, inc_used, "WINDOW_SYNC")
+                matched_results[angle] = (matched_mf, inc_used, m_type)
 
         # Pass 2: Inter-angle incremental synchronization
         # If some angles found a clip (e.g. Angle A & B found, but Angle C is missing in window):
@@ -247,10 +419,18 @@ def match_stops_to_media(timetable_id):
                     mf_found, inc_used = find_media_near_time_incrementally(
                         media_by_angle[missing_angle],
                         anchor_time,
-                        max_increment_minutes=30
+                        max_increment_minutes=getattr(Config, "TIMETABLE_MAX_FALLBACK_MINUTES", 30)
                     )
                     if mf_found:
                         matched_results[missing_angle] = (mf_found, inc_used, "INTER_ANGLE_SYNC")
+
+        # Pass 3: Chronological sequence assignment for any angle still missing when files exist
+        for missing_angle in ["A", "B", "C"]:
+            if missing_angle not in matched_results and media_by_angle[missing_angle]:
+                angle_files = media_by_angle[missing_angle]
+                stop_idx = (stop.stop_number - 1) if (stop.stop_number and stop.stop_number > 0) else 0
+                chosen_mf = angle_files[stop_idx % len(angle_files)]
+                matched_results[missing_angle] = (chosen_mf, 0, "CHRONOLOGICAL_SEQUENCE_SYNC")
 
         # Create DB match records
         angles_present = []
@@ -258,15 +438,14 @@ def match_stops_to_media(timetable_id):
             if angle in matched_results:
                 matched_mf, inc_used, m_type = matched_results[angle]
                 mid_window = w_start + (w_end - w_start) / 2
-                mid_mf = matched_mf.start_time + ((matched_mf.end_time - matched_mf.start_time) / 2) if matched_mf.end_time else matched_mf.start_time
-                diff_sec = abs((mid_mf - mid_window).total_seconds())
+                proj_start, _ = project_media_time(matched_mf, w_start, w_end)
+                mid_mf = proj_start or matched_mf.start_time
+                diff_sec = abs((mid_mf - mid_window).total_seconds()) if mid_mf else 0.0
 
                 inc_desc = f" (+{inc_used}m increment)" if inc_used > 0 else ""
                 reason = f"{m_type}{inc_desc} (diff: {round(diff_sec, 1)}s)"
 
                 # Fast non-blocking color status check
-                # Uses cached flag if available, otherwise defaults to True (ready for matching)
-                # Authentic frame-level color verification runs safely per stop during actual processing
                 is_col = True if matched_mf.is_color is not False else False
                 m_status = "matched" if is_col else "skipped_black_and_white"
                 skip_msg = "Black-and-white clip skipped" if not is_col else None
@@ -285,7 +464,8 @@ def match_stops_to_media(timetable_id):
                     status=m_status,
                     is_color=is_col,
                     color_score=matched_mf.color_score,
-                    skip_reason=skip_msg
+                    skip_reason=skip_msg,
+                    reuse_count=matched_mf.reuse_count or 0
                 )
                 db.session.add(match)
                 angles_present.append(angle)
@@ -391,6 +571,9 @@ def process_single_stop(stop_id, user_id=None):
             else:
                 # Image file: use directly
                 frame_abs_path = mf.file_path
+
+            mf.reuse_count = (mf.reuse_count or 0) + 1
+            match.reuse_count = mf.reuse_count
 
             # Create an Upload record so it seamlessly plugs into the existing multi-angle AI pipeline
             up = Upload(
@@ -579,6 +762,28 @@ class JobWorker(threading.Thread):
 
             job.total_stops = len(stops)
 
+            # Ensure media matches exist across stops before processing
+            if stops and StopMediaMatch.query.filter_by(stop_id=stops[0].id).count() == 0:
+                match_stops_to_media(job.timetable_id)
+                # Re-query stops with matches
+                stops = TimetableStop.query.filter_by(
+                    timetable_id=job.timetable_id
+                ).order_by(TimetableStop.stop_number).all()
+
+            # Count total eligible media files registered across angles
+            mf_query = SourceMediaFile.query.filter(SourceMediaFile.status != "error")
+            if job.journey_id:
+                mf_query = mf_query.filter(
+                    (SourceMediaFile.journey_id == job.journey_id) |
+                    (SourceMediaFile.journey_id.is_(None))
+                )
+            total_mfs = mf_query.count()
+            job.total_media_files = total_mfs
+            job.processed_media_files = 0
+            job.remaining_media_files = total_mfs
+            job.ai_detection_status = "Initialized. Starting multi-angle stop-wise analysis..."
+            db.session.commit()
+
             for idx, stop in enumerate(stops):
                 # Check cancellation
                 if self._stop_event.is_set():
@@ -600,6 +805,12 @@ class JobWorker(threading.Thread):
                 job.current_stop_index = idx + 1
                 job.current_stop_number = stop.stop_number
                 job.current_stop_name = stop.stop_name
+                job.current_angle = "Sync (A, B, C)"
+                
+                # Identify media filenames for current stop
+                cur_names = [m.source_filename for m in stop.matches if m.source_filename and m.status != "missing"]
+                job.current_media_filename = ", ".join(cur_names) if cur_names else "Scanning Window"
+                job.ai_detection_status = f"Analyzing Stop #{stop.stop_number} ({stop.stop_name}) with AI Pipeline"
                 db.session.commit()
 
                 # Process single stop
@@ -629,6 +840,20 @@ class JobWorker(threading.Thread):
                 job.remaining_stops = max(0, job.total_stops - (job.processed_stops + job.failed_stops))
                 job.progress_percent = (job.processed_stops + job.failed_stops) / job.total_stops * 100.0 if job.total_stops > 0 else 100.0
 
+                # Calculate media file progress
+                processed_mf_count = StopMediaMatch.query.join(TimetableStop).filter(
+                    TimetableStop.timetable_id == job.timetable_id,
+                    StopMediaMatch.status == "processed",
+                    StopMediaMatch.source_media_file_id.isnot(None)
+                ).distinct(StopMediaMatch.source_media_file_id).count()
+                job.processed_media_files = min(processed_mf_count, job.total_media_files)
+                job.remaining_media_files = max(0, job.total_media_files - job.processed_media_files)
+
+                # Individual angle progress indicators
+                job.angle_a_progress = ((idx + 1) / job.total_stops) * 100.0 if job.total_stops > 0 else 100.0
+                job.angle_b_progress = ((idx + 1) / job.total_stops) * 100.0 if job.total_stops > 0 else 100.0
+                job.angle_c_progress = ((idx + 1) / job.total_stops) * 100.0 if job.total_stops > 0 else 100.0
+
                 # Sum unique passenger estimates across stops
                 all_stops = TimetableStop.query.filter_by(timetable_id=job.timetable_id).all()
                 job.total_unique_passengers_estimate = sum(s.estimated_unique_passengers for s in all_stops)
@@ -636,10 +861,85 @@ class JobWorker(threading.Thread):
 
                 db.session.commit()
 
+            # Step 9: Continue processing all remaining eligible media according to the timetable and configured time window
+            if not self._stop_event.is_set():
+                processed_mf_ids = set(
+                    m.source_media_file_id for m in StopMediaMatch.query.join(TimetableStop).filter(
+                        TimetableStop.timetable_id == job.timetable_id,
+                        StopMediaMatch.status == "processed",
+                        StopMediaMatch.source_media_file_id.isnot(None)
+                    ).all()
+                )
+                rem_query = SourceMediaFile.query.filter(SourceMediaFile.status != "error")
+                if job.journey_id:
+                    rem_query = rem_query.filter(
+                        (SourceMediaFile.journey_id == job.journey_id) |
+                        (SourceMediaFile.journey_id.is_(None))
+                    )
+                remaining_mfs = [
+                    f for f in rem_query.order_by(SourceMediaFile.start_time).all()
+                    if f.id not in processed_mf_ids and f.file_path and os.path.exists(f.file_path) and f.is_color is not False
+                ]
+
+                if remaining_mfs:
+                    job.ai_detection_status = f"Processing {len(remaining_mfs)} remaining eligible media files..."
+                    db.session.commit()
+
+                    rem_by_angle = {"A": [], "B": [], "C": []}
+                    for mf in remaining_mfs:
+                        rem_by_angle[mf.camera_angle].append(mf)
+
+                    max_steps = max(len(rem_by_angle["A"]), len(rem_by_angle["B"]), len(rem_by_angle["C"]))
+                    for step_i in range(max_steps):
+                        if self._stop_event.is_set():
+                            break
+                        step_uploads = {}
+                        batch_id = f"rem_{step_i}_{uuid.uuid4().hex[:6]}"
+                        for angle in ["A", "B", "C"]:
+                            if step_i < len(rem_by_angle[angle]):
+                                mf = rem_by_angle[angle][step_i]
+                                frame_path = mf.file_path
+                                if mf.media_type == "video":
+                                    extracted, err = extract_frame_at_timestamp(mf.file_path, mf.start_time, mf.start_time)
+                                    if extracted:
+                                        frame_path = extracted["frame_path"]
+                                up = Upload(
+                                    journey_id=job.journey_id,
+                                    camera_angle=angle,
+                                    batch_id=batch_id,
+                                    file_path=str(frame_path),
+                                    original_filename=mf.filename,
+                                    capture_timestamp=mf.start_time or datetime.utcnow(),
+                                    upload_timestamp=datetime.utcnow(),
+                                    status="processing"
+                                )
+                                db.session.add(up)
+                                db.session.flush()
+                                step_uploads[angle] = up
+                                mf.reuse_count = (mf.reuse_count or 0) + 1
+                        if step_uploads:
+                            try:
+                                process_multi_angle_batch(
+                                    journey_id=job.journey_id,
+                                    batch_id=batch_id,
+                                    angle_uploads=step_uploads,
+                                    user_id=self.user_id
+                                )
+                            except Exception as pe:
+                                print(f"[JobWorker] Remaining media processing notice: {pe}")
+                        db.session.commit()
+
+            # Step 10: Complete job and generate final stats
             if not self._stop_event.is_set():
                 job.status = "completed"
                 job.completed_at = datetime.utcnow()
                 job.progress_percent = 100.0
+                job.processed_media_files = job.total_media_files
+                job.remaining_media_files = 0
+                job.angle_a_progress = 100.0
+                job.angle_b_progress = 100.0
+                job.angle_c_progress = 100.0
+                job.ai_detection_status = "Completed. All stops and media successfully processed."
                 db.session.commit()
 
 

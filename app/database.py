@@ -150,7 +150,8 @@ def run_migrations(app):
             match_cols_to_add = [
                 ("is_color", "BOOLEAN DEFAULT 1"),
                 ("color_score", "FLOAT"),
-                ("skip_reason", "TEXT")
+                ("skip_reason", "TEXT"),
+                ("reuse_count", "INTEGER DEFAULT 0")
             ]
             with db.engine.connect() as conn:
                 for col_name, col_type in match_cols_to_add:
@@ -167,7 +168,8 @@ def run_migrations(app):
             smf_cols_to_add = [
                 ("is_color", "BOOLEAN DEFAULT 1"),
                 ("color_score", "FLOAT"),
-                ("skip_reason", "TEXT")
+                ("skip_reason", "TEXT"),
+                ("reuse_count", "INTEGER DEFAULT 0")
             ]
             with db.engine.connect() as conn:
                 for col_name, col_type in smf_cols_to_add:
@@ -177,6 +179,28 @@ def run_migrations(app):
                             conn.commit()
                         except Exception as e:
                             print(f"[Migration Warning] Adding column {col_name} to source_media_files: {e}")
+
+        # Check and migrate 'stop_processing_jobs' table columns
+        if "stop_processing_jobs" in tables:
+            spj_cols = {col["name"] for col in inspector.get_columns("stop_processing_jobs")}
+            spj_cols_to_add = [
+                ("current_media_filename", "VARCHAR(255)"),
+                ("ai_detection_status", "VARCHAR(100) DEFAULT 'Idle'"),
+                ("total_media_files", "INTEGER DEFAULT 0"),
+                ("processed_media_files", "INTEGER DEFAULT 0"),
+                ("remaining_media_files", "INTEGER DEFAULT 0"),
+                ("angle_a_progress", "FLOAT DEFAULT 0.0"),
+                ("angle_b_progress", "FLOAT DEFAULT 0.0"),
+                ("angle_c_progress", "FLOAT DEFAULT 0.0")
+            ]
+            with db.engine.connect() as conn:
+                for col_name, col_type in spj_cols_to_add:
+                    if col_name not in spj_cols:
+                        try:
+                            conn.execute(text(f"ALTER TABLE stop_processing_jobs ADD COLUMN {col_name} {col_type}"))
+                            conn.commit()
+                        except Exception as e:
+                            print(f"[Migration Warning] Adding column {col_name} to stop_processing_jobs: {e}")
 
         # Check and migrate 'passenger_observations' table columns
         if "passenger_observations" in tables:

@@ -35,12 +35,15 @@
             <input type="text" id="report-search" class="form-control" placeholder="Search (e.g. P001)" oninput="filterReport()">
         </div>
 
-        <div style="display:flex;gap:10px;">
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
             <button class="btn-secondary" onclick="downloadCSVReport()">
                 <i class="bi bi-filetype-csv text-success"></i> Export CSV Report
             </button>
             <button class="btn-primary" onclick="downloadPDFReport()" style="background:#dc2626;border-color:#dc2626;">
                 <i class="bi bi-file-earmark-pdf-fill"></i> Export PDF Report (With Faces)
+            </button>
+            <button class="btn-primary" id="btn-publish-reports-cloud" onclick="publishReportsToLiveServer()" style="background:#0284c7;border-color:#0284c7;">
+                <i class="bi bi-cloud-arrow-up-fill"></i> PUBLISH REPORTS TO LIVE SERVER
             </button>
         </div>
     </div>
@@ -175,6 +178,49 @@ function downloadPDFReport() {
     if (search) url.searchParams.append("person_id", search);
 
     window.open(url.toString(), "_blank");
+}
+
+async function publishReportsToLiveServer() {
+    const journeyId = document.getElementById("report-journey")?.value || "";
+    const btn = document.getElementById("btn-publish-reports-cloud");
+    const origHtml = btn ? btn.innerHTML : "";
+
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<i class="bi bi-arrow-repeat spin"></i> Publishing to Cloud...`;
+    }
+
+    try {
+        const url = journeyId ? `/api/sync/publish/${journeyId}` : "/api/sync/publish-latest";
+        showToast("Exporting bundles, uploading thumbnails, and syncing to GitHub...", "info");
+
+        const res = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ upload_remote_crops: true })
+        });
+        const data = await res.json();
+
+        if (res.ok && data.success) {
+            showToast(data.message || "Reports published successfully to live server & GitHub!", "success");
+            alert(`✅ PUBLISHED TO LIVE SERVER!\n\n` +
+                  `Journey: ${data.export_details?.journey_code || journeyId || 'Latest'}\n` +
+                  `Passengers: ${data.export_details?.total_passengers || 0}\n` +
+                  `Stops: ${data.export_details?.total_stops || 0}\n` +
+                  `Remote Thumbnails Uploaded: ${data.export_details?.remote_images_uploaded || 0}\n` +
+                  `GitHub Status: ${data.sync_details?.method || 'Synced'}\n\n` +
+                  `Live server dashboard will now display these reports without running heavy AI.`);
+        } else {
+            showToast(data.error || "Failed to publish reports.", "error");
+        }
+    } catch (e) {
+        showToast("Publishing error: " + e.message, "error");
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = origHtml;
+        }
+    }
 }
 </script>
 {% endblock %}

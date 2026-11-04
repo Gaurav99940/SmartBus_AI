@@ -984,6 +984,7 @@ class SourceMediaFile(db.Model):
     is_color = db.Column(db.Boolean, default=True)
     color_score = db.Column(db.Float, nullable=True)
     skip_reason = db.Column(db.Text, nullable=True)
+    reuse_count = db.Column(db.Integer, default=0)
     error_message = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -1012,6 +1013,7 @@ class SourceMediaFile(db.Model):
             "is_color": self.is_color if self.is_color is not None else True,
             "color_score": self.color_score,
             "skip_reason": self.skip_reason,
+            "reuse_count": self.reuse_count or 0,
             "error_message": self.error_message,
             "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else None
         }
@@ -1180,6 +1182,7 @@ class StopMediaMatch(db.Model):
     color_score = db.Column(db.Float, nullable=True)
     skip_reason = db.Column(db.Text, nullable=True)
     detection_count = db.Column(db.Integer, default=0)
+    reuse_count = db.Column(db.Integer, default=0)
     error_message = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -1218,6 +1221,7 @@ class StopMediaMatch(db.Model):
             "is_color": self.is_color if self.is_color is not None else True,
             "color_score": self.color_score,
             "skip_reason": self.skip_reason,
+            "reuse_count": self.reuse_count or (self.source_media_file.reuse_count if self.source_media_file else 0),
             "failure_or_fallback_reason": fallback_reason,
             "detection_count": self.detection_count,
             "error_message": self.error_message
@@ -1240,6 +1244,8 @@ class StopProcessingJob(db.Model):
     current_stop_number = db.Column(db.Integer, nullable=True)
     current_stop_name = db.Column(db.String(150), nullable=True)
     current_angle = db.Column(db.String(10), nullable=True)  # 'A', 'B', 'C'
+    current_media_filename = db.Column(db.String(255), nullable=True)
+    ai_detection_status = db.Column(db.String(100), default="Idle")
     
     total_stops = db.Column(db.Integer, default=0)
     processed_stops = db.Column(db.Integer, default=0)
@@ -1249,6 +1255,14 @@ class StopProcessingJob(db.Model):
     fully_covered_stops = db.Column(db.Integer, default=0)
     partially_covered_stops = db.Column(db.Integer, default=0)
     not_covered_stops = db.Column(db.Integer, default=0)
+
+    total_media_files = db.Column(db.Integer, default=0)
+    processed_media_files = db.Column(db.Integer, default=0)
+    remaining_media_files = db.Column(db.Integer, default=0)
+
+    angle_a_progress = db.Column(db.Float, default=0.0)
+    angle_b_progress = db.Column(db.Float, default=0.0)
+    angle_c_progress = db.Column(db.Float, default=0.0)
     
     total_unique_passengers_estimate = db.Column(db.Integer, default=0)
     total_confirmed_identities = db.Column(db.Integer, default=0)
@@ -1281,6 +1295,8 @@ class StopProcessingJob(db.Model):
             "current_stop_number": self.current_stop_number,
             "current_stop_name": self.current_stop_name,
             "current_angle": self.current_angle,
+            "current_media_filename": self.current_media_filename,
+            "ai_detection_status": self.ai_detection_status or "Idle",
             "total_stops": self.total_stops,
             "processed_stops": self.processed_stops,
             "remaining_stops": self.remaining_stops,
@@ -1289,6 +1305,12 @@ class StopProcessingJob(db.Model):
             "fully_covered_stops": self.fully_covered_stops,
             "partially_covered_stops": self.partially_covered_stops,
             "not_covered_stops": self.not_covered_stops,
+            "total_media_files": self.total_media_files or 0,
+            "processed_media_files": self.processed_media_files or 0,
+            "remaining_media_files": self.remaining_media_files or 0,
+            "angle_a_progress": round(self.angle_a_progress or 0.0, 1),
+            "angle_b_progress": round(self.angle_b_progress or 0.0, 1),
+            "angle_c_progress": round(self.angle_c_progress or 0.0, 1),
             "coverage_percentage": round((self.fully_covered_stops / self.total_stops * 100), 1) if self.total_stops > 0 else 0.0,
             "total_unique_passengers_estimate": self.total_unique_passengers_estimate,
             "total_confirmed_identities": self.total_confirmed_identities,
@@ -1299,6 +1321,62 @@ class StopProcessingJob(db.Model):
             "completed_at": self.completed_at.strftime("%Y-%m-%d %H:%M:%S") if self.completed_at else None,
             "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else None
         }
+
+
+class CloudSyncLog(db.Model):
+    """
+    Audit log for GitHub report publishing and remote image synchronization.
+    """
+    __tablename__ = "cloud_sync_logs"
+
+    id = db.Column(db.Integer, primary_key=True)
+    journey_id = db.Column(db.Integer, db.ForeignKey("journeys.id"), nullable=True, index=True)
+    sync_type = db.Column(db.String(50), default="full")  # 'github', 'image_server', 'full', 'pull_live'
+    sync_status = db.Column(db.String(30), default="pending", index=True)  # 'pending', 'in_progress', 'success', 'failed'
+    
+    total_records = db.Column(db.Integer, default=0)
+    images_uploaded = db.Column(db.Integer, default=0)
+    images_failed = db.Column(db.Integer, default=0)
+    
+    github_repo = db.Column(db.String(150), nullable=True)
+    github_branch = db.Column(db.String(100), default="main")
+    github_commit_sha = db.Column(db.String(100), nullable=True)
+    published_path = db.Column(db.String(255), nullable=True)
+    
+    error_message = db.Column(db.Text, nullable=True)
+    details_json = db.Column(db.Text, nullable=True)
+    
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    completed_at = db.Column(db.DateTime, nullable=True)
+
+    journey = db.relationship("Journey", foreign_keys=[journey_id])
+
+    def to_dict(self):
+        details = {}
+        if self.details_json:
+            try:
+                details = json.loads(self.details_json)
+            except Exception:
+                pass
+        return {
+            "id": self.id,
+            "journey_id": self.journey_id,
+            "journey_code": self.journey.journey_code if self.journey else None,
+            "sync_type": self.sync_type,
+            "sync_status": self.sync_status,
+            "total_records": self.total_records,
+            "images_uploaded": self.images_uploaded,
+            "images_failed": self.images_failed,
+            "github_repo": self.github_repo,
+            "github_branch": self.github_branch,
+            "github_commit_sha": self.github_commit_sha,
+            "published_path": self.published_path,
+            "error_message": self.error_message,
+            "details": details,
+            "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else None,
+            "completed_at": self.completed_at.strftime("%Y-%m-%d %H:%M:%S") if self.completed_at else None
+        }
+
 
 
 

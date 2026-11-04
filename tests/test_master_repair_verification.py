@@ -478,8 +478,10 @@ class TestMasterRepairVerification(unittest.TestCase):
             self.assertAlmostEqual(f_sim, 0.0, places=4)
 
             # 2. Process multi-angle batch with woman in Angle B and man in Angle C
-            up_b = Upload(journey_id=self.journey_id, file_path="data/uploads/sample_angle_B.jpg", original_filename="b.jpg", camera_angle="B")
-            up_c = Upload(journey_id=self.journey_id, file_path="data/uploads/sample_angle_C.jpg", original_filename="c.jpg", camera_angle="C")
+            img_b = self._create_synthetic_image("sample_angle_B.jpg")
+            img_c = self._create_synthetic_image("sample_angle_C.jpg")
+            up_b = Upload(journey_id=self.journey_id, file_path=img_b, original_filename="b.jpg", camera_angle="B")
+            up_c = Upload(journey_id=self.journey_id, file_path=img_c, original_filename="c.jpg", camera_angle="C")
             db.session.add_all([up_b, up_c])
             db.session.commit()
 

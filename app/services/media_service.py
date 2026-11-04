@@ -2,7 +2,7 @@ import os
 import re
 import cv2
 import hashlib
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from PIL import Image, ExifTags
 from app.config import Config
@@ -40,8 +40,8 @@ def parse_timestamp_from_filename(filename_or_path, base_date=None):
     """
     s = Path(filename_or_path).stem
 
-    # Check 12-hour AM/PM with date
-    m_ampm = re.search(r'(?<!\d)(\d{2})[-_/](\d{2})[-_/](\d{4})[-_\s]+(\d{1,2})[-_:](\d{2})(?:[-_:](\d{2}))?[-_\s]*(AM|PM)', s, re.IGNORECASE)
+    # Check 12-hour AM/PM with date: 15-10-2026 06-01-20 PM or 2026-10-15 06:01 PM
+    m_ampm = re.search(r'(?<!\d)(\d{2})[-_/](\d{2})[-_/](\d{4})[-_\s]+(\d{1,2})[-_:\.](\d{2})(?:[-_:\.](\d{2}))?[-_\s]*(AM|PM)', s, re.IGNORECASE)
     if m_ampm:
         try:
             sec = m_ampm.group(6) or "00"
@@ -50,28 +50,49 @@ def parse_timestamp_from_filename(filename_or_path, base_date=None):
         except Exception:
             pass
 
-    # Day-Month-Year 24h: 15-10-2026_18-01-20 or 15-10-2026 18:01:20
-    for m_dmy in re.finditer(r'(?<!\d)(\d{2})[-_/](\d{2})[-_/](\d{4})[-_\s]+(\d{2})[-_:](\d{2})(?:[-_:](\d{2}))?(?!\d)', s):
+    # Check 12-hour AM/PM without date: Stop1_08.30_AM or 06-30-PM or 8:30 AM
+    m_ampm_nodate = re.search(r'(?:^|[_\-\s])(\d{1,2})[-_:\.](\d{2})(?:[-_:\.](\d{2}))?[-_\s]*(AM|PM)(?:[_\-\s]|$)', s, re.IGNORECASE)
+    if m_ampm_nodate:
+        try:
+            hr = int(m_ampm_nodate.group(1))
+            mn = int(m_ampm_nodate.group(2))
+            sc = int(m_ampm_nodate.group(3) or "00")
+            ampm = m_ampm_nodate.group(4).upper()
+            if ampm == "PM" and hr < 12:
+                hr += 12
+            elif ampm == "AM" and hr == 12:
+                hr = 0
+            if 0 <= hr < 24 and 0 <= mn < 60 and 0 <= sc < 60:
+                from datetime import date, time as dt_time
+                b_date = base_date or date.today()
+                return datetime.combine(b_date, dt_time(hr, mn, sc))
+        except Exception:
+            pass
+
+    # Day-Month-Year 24h: 15-10-2026_18-01-20 or 15.10.2026 18:01:20 or 15/10/2026 18-01
+    for m_dmy in re.finditer(r'(?<!\d)(\d{2})[-_/\.](\d{2})[-_/\.](\d{4})[-_\s]+(\d{1,2})[-_:\.](\d{2})(?:[-_:\.](\d{2}))?(?!\d)', s):
         try:
             sec = m_dmy.group(6) or "00"
-            dt_str = f"{m_dmy.group(1)}-{m_dmy.group(2)}-{m_dmy.group(3)} {m_dmy.group(4)}:{m_dmy.group(5)}:{sec}"
+            dt_str = f"{m_dmy.group(1)}-{m_dmy.group(2)}-{m_dmy.group(3)} {int(m_dmy.group(4)):02d}:{m_dmy.group(5)}:{sec}"
             return datetime.strptime(dt_str, "%d-%m-%Y %H:%M:%S")
         except Exception:
             continue
 
-    # Year-Month-Day 24h: 2026-10-23_10-15-00 or 2026-10-23 10:15:00
-    for m_ymd in re.finditer(r'(?<!\d)(\d{4})[-_/](\d{2})[-_/](\d{2})[-_\s]+(\d{2})[-_:](\d{2})(?:[-_:](\d{2}))?(?!\d)', s):
+    # Year-Month-Day 24h: 2026-10-23_10-15-00 or 2026.10.23 10.15.00 or 2026/10/23 10:15
+    for m_ymd in re.finditer(r'(?<!\d)(\d{4})[-_/\.](\d{2})[-_/\.](\d{2})[-_\s]+(\d{1,2})[-_:\.](\d{2})(?:[-_:\.](\d{2}))?(?!\d)', s):
         try:
             sec = m_ymd.group(6) or "00"
-            dt_str = f"{m_ymd.group(1)}-{m_ymd.group(2)}-{m_ymd.group(3)} {m_ymd.group(4)}:{m_ymd.group(5)}:{sec}"
+            dt_str = f"{m_ymd.group(1)}-{m_ymd.group(2)}-{m_ymd.group(3)} {int(m_ymd.group(4)):02d}:{m_ymd.group(5)}:{sec}"
             return datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S")
         except Exception:
             continue
 
-    # Compact yyyymmdd_hhmmss or yyyymmddhhmmss with boundary protection
+    # Compact yyyymmdd_hhmmss or yyyymmddhhmmss or yyyymmdd_hhmm with boundary protection
     patterns = [
         (r'(?<!\d)(\d{4})(\d{2})(\d{2})[-_](\d{2})(\d{2})(\d{2})(?!\d)', "%Y%m%d %H%M%S"),
         (r'(?<!\d)(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(?!\d)', "%Y%m%d%H%M%S"),
+        (r'(?<!\d)(\d{4})(\d{2})(\d{2})[-_](\d{2})(\d{2})(?!\d)', "%Y%m%d %H%M"),
+        (r'(?<!\d)(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(?!\d)', "%Y%m%d%H%M"),
     ]
     for pat, fmt in patterns:
         for m in re.finditer(pat, s):
@@ -82,20 +103,25 @@ def parse_timestamp_from_filename(filename_or_path, base_date=None):
                 elif fmt == "%Y%m%d%H%M%S":
                     dt_str = f"{m.group(1)}{m.group(2)}{m.group(3)}{m.group(4)}{m.group(5)}{m.group(6)}"
                     return datetime.strptime(dt_str, fmt)
+                elif fmt == "%Y%m%d %H%M":
+                    dt_str = f"{m.group(1)}{m.group(2)}{m.group(3)} {m.group(4)}{m.group(5)}"
+                    return datetime.strptime(dt_str, fmt)
+                elif fmt == "%Y%m%d%H%M":
+                    dt_str = f"{m.group(1)}{m.group(2)}{m.group(3)}{m.group(4)}{m.group(5)}"
+                    return datetime.strptime(dt_str, fmt)
             except Exception:
                 continue
 
-    # Time-only with delimiters: Stop01_A_10-15-00 or 10_15_00 or 10-15
-    m_time_delim = re.search(r'(?:^|[_\-\s])(\d{2})[-_:](\d{2})(?:[-_:](\d{2}))?(?:[_\-\s]|$)', s)
+    # Time-only with delimiters: 10.15.00, 10-15-00, 10:15:00, 10_15_00, 10.15, 10-15, 10:15
+    m_time_delim = re.search(r'(?:^|[_\-\s])(\d{1,2})[-_:\.](\d{2})(?:[-_:\.](\d{2}))?(?:[_\-\s]|$)', s)
     if m_time_delim:
         try:
             hr = int(m_time_delim.group(1))
             mn = int(m_time_delim.group(2))
             sc = int(m_time_delim.group(3) or "00")
             if 0 <= hr < 24 and 0 <= mn < 60 and 0 <= sc < 60:
-                from datetime import date
+                from datetime import date, time as dt_time
                 b_date = base_date or date.today()
-                from datetime import time as dt_time
                 return datetime.combine(b_date, dt_time(hr, mn, sc))
         except Exception:
             pass
@@ -111,6 +137,68 @@ def parse_timestamp_from_filename(filename_or_path, base_date=None):
                 from datetime import date, time as dt_time
                 b_date = base_date or date.today()
                 return datetime.combine(b_date, dt_time(hr, mn, sc))
+        except Exception:
+            pass
+
+    # Compact 4-digit HHMM (e.g. A_1015.mp4)
+    m_compact_4 = re.search(r'(?:^|[_\-\s])(\d{2})(\d{2})(?:[_\-\s]|$)', s)
+    if m_compact_4:
+        try:
+            hr = int(m_compact_4.group(1))
+            mn = int(m_compact_4.group(2))
+            if 0 <= hr < 24 and 0 <= mn < 60:
+                from datetime import date, time as dt_time
+                b_date = base_date or date.today()
+                return datetime.combine(b_date, dt_time(hr, mn, 0))
+        except Exception:
+            pass
+
+    # Unix epoch timestamp (10 or 13 digits)
+    m_epoch = re.search(r'(?<!\d)(1[678]\d{8})(?:\d{3})?(?!\d)', s)
+    if m_epoch:
+        try:
+            ts = int(m_epoch.group(1))
+            return datetime.fromtimestamp(ts)
+        except Exception:
+            pass
+
+    return None
+
+
+def parse_stop_number_from_filename(filename_or_path):
+    """
+    Extracts explicit stop index from filename if present.
+    Supports:
+      - Stop01, Stop_1, Stop-1, Stop 1, Stop1
+      - S01, S_1, S-1, S1
+      - Stp01, Stp_1, Stp-1, Stp1
+      - Leading number like 01_AngleA.mp4 or 1_A.mp4
+    """
+    if not filename_or_path:
+        return None
+    s = Path(filename_or_path).stem.lower()
+
+    # Pattern 1: stop/stp/station followed by number
+    m = re.search(r'(?:stop|stp|station)[_\-\s]*(\d+)', s)
+    if m:
+        try:
+            return int(m.group(1))
+        except Exception:
+            pass
+
+    # Pattern 2: s followed by 1-2 digits, bounded (e.g. s01, s1)
+    m = re.search(r'(?:^|[_\-\s])s[-_]?(\d{1,2})(?:[_\-\s]|$)', s)
+    if m:
+        try:
+            return int(m.group(1))
+        except Exception:
+            pass
+
+    # Pattern 3: Leading 1-2 digits followed by angle or separator: e.g. 01_Angle_A.mp4
+    m = re.search(r'^(\d{1,2})[_\-\s]+(?:angle|cam|front|mid|rear|[a-c])', s)
+    if m:
+        try:
+            return int(m.group(1))
         except Exception:
             pass
 
@@ -299,8 +387,9 @@ def extract_media_metadata(file_path, base_date=None):
 
 def scan_directory(dir_path, base_date=None):
     """
-    Scans a local directory safely for supported clips and images.
-    Returns: { "success": bool, "folder_path": str, "folder_name": str, "clips_count": int, "images_count": int, "files": list, "error": str }
+    Scans a local directory safely for supported clips and images,
+    including all subdirectories.
+    Returns: { "success": bool, "folder_path": str, "folder_name": str, "clips_count": int, "images_count": int, "total_supported": int, "files": list, "error": str }
     """
     folder = Path(dir_path)
     if not folder.exists() or not folder.is_dir():
@@ -309,6 +398,7 @@ def scan_directory(dir_path, base_date=None):
             "error": f"Directory does not exist or is not a folder: {dir_path}",
             "clips_count": 0,
             "images_count": 0,
+            "total_supported": 0,
             "files": []
         }
 
@@ -317,18 +407,27 @@ def scan_directory(dir_path, base_date=None):
         clips_count = 0
         images_count = 0
 
-        # Scan folder items (non-recursive to avoid huge subtrees unless needed)
-        for item in sorted(folder.iterdir(), key=lambda p: p.name.lower()):
-            if item.is_file():
-                ext = item.suffix.lower()
-                if ext in ALL_SUPPORTED_EXTENSIONS:
-                    file_info = extract_media_metadata(str(item), base_date=base_date)
-                    if file_info["is_valid"]:
-                        if file_info["media_type"] == "video":
-                            clips_count += 1
-                        elif file_info["media_type"] == "image":
-                            images_count += 1
-                        discovered_files.append(file_info)
+        # Scan folder items recursively to support nested subfolders
+        all_items = []
+        for root, _, filenames in os.walk(folder):
+            for fn in filenames:
+                all_items.append(Path(root) / fn)
+        all_items.sort(key=lambda p: str(p).lower())
+
+        for item in all_items:
+            ext = item.suffix.lower()
+            if ext in ALL_SUPPORTED_EXTENSIONS:
+                file_info = extract_media_metadata(str(item), base_date=base_date)
+                if file_info["is_valid"]:
+                    try:
+                        file_info["relative_path"] = str(item.relative_to(folder))
+                    except Exception:
+                        file_info["relative_path"] = item.name
+                    if file_info["media_type"] == "video":
+                        clips_count += 1
+                    elif file_info["media_type"] == "image":
+                        images_count += 1
+                    discovered_files.append(file_info)
 
         return {
             "success": True,
@@ -336,6 +435,7 @@ def scan_directory(dir_path, base_date=None):
             "folder_name": folder.name,
             "clips_count": clips_count,
             "images_count": images_count,
+            "total_supported": clips_count + images_count,
             "files": discovered_files
         }
     except Exception as e:
@@ -344,8 +444,132 @@ def scan_directory(dir_path, base_date=None):
             "error": f"Failed to scan directory: {str(e)}",
             "clips_count": 0,
             "images_count": 0,
+            "total_supported": 0,
             "files": []
         }
+
+
+def extract_frames_from_video(video_path, start_timestamp=None, interval_seconds=3.0, max_frames=30, output_dir=None):
+    """
+    Reads video frames using OpenCV, extracts suitable frames at configurable intervals,
+    detects and skips redundant or low-contrast frames, and preserves frame timestamps.
+    Returns: list of dicts with frame metadata and saved image paths.
+    """
+    import numpy as np
+    path = Path(video_path)
+    if not path.exists():
+        return []
+
+    cap = cv2.VideoCapture(str(path))
+    if not cap.isOpened():
+        return []
+
+    if output_dir is None:
+        output_dir = Config.UPLOAD_FOLDER / "frames"
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    extracted_frames = []
+    prev_gray_thumb = None
+
+    try:
+        fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+        duration = (total_frames / fps) if (fps > 0 and total_frames > 0) else 0.0
+
+        if start_timestamp is None:
+            v_meta = extract_media_metadata(str(path))
+            start_timestamp = v_meta.get("start_time") or datetime.utcnow()
+
+        if duration <= 0.0 or total_frames <= 1:
+            # Single frame fallback
+            ret, frame = cap.read()
+            if ret and frame is not None:
+                fname = f"frame_{path.stem}_0_{int(datetime.utcnow().timestamp())}.jpg"
+                out_path = output_dir / fname
+                cv2.imwrite(str(out_path), frame)
+                extracted_frames.append({
+                    "frame_path": str(out_path),
+                    "frame_filename": fname,
+                    "frame_number": 0,
+                    "frame_timestamp": start_timestamp,
+                    "offset_seconds": 0.0,
+                    "width": frame.shape[1],
+                    "height": frame.shape[0]
+                })
+            return extracted_frames
+
+        # Determine frame sample positions based on interval_seconds
+        step_frames = max(1, int(round(interval_seconds * fps)))
+        sample_frame_indices = list(range(0, total_frames, step_frames))
+        if len(sample_frame_indices) > max_frames:
+            # Subsample evenly if too many intervals
+            indices = np.linspace(0, total_frames - 1, max_frames, dtype=int)
+            sample_frame_indices = sorted(list(set(indices)))
+
+        for frame_idx in sample_frame_indices:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+            ret, frame = cap.read()
+            if not ret or frame is None:
+                continue
+
+            # Quality and redundancy check
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            mean_intensity = float(np.mean(gray))
+            if mean_intensity < 15 or mean_intensity > 242:
+                # Extreme black or blown-out frame, skip
+                continue
+
+            thumb = cv2.resize(gray, (64, 48))
+            if prev_gray_thumb is not None:
+                mse = float(np.mean((thumb.astype("float") - prev_gray_thumb.astype("float")) ** 2))
+                if mse < 6.0:
+                    # Redundant / nearly identical to previous extracted frame, skip
+                    continue
+
+            prev_gray_thumb = thumb
+            offset_sec = frame_idx / fps
+            frame_dt = start_timestamp + timedelta(seconds=offset_sec)
+
+            fname = f"frame_{path.stem}_{frame_idx}_{int(datetime.utcnow().timestamp())}.jpg"
+            out_path = output_dir / fname
+            cv2.imwrite(str(out_path), frame)
+
+            extracted_frames.append({
+                "frame_path": str(out_path),
+                "frame_filename": fname,
+                "frame_number": frame_idx,
+                "frame_timestamp": frame_dt,
+                "offset_seconds": round(offset_sec, 2),
+                "width": frame.shape[1],
+                "height": frame.shape[0]
+            })
+
+        if not extracted_frames and total_frames > 0:
+            # Fallback to middle frame
+            mid_idx = total_frames // 2
+            cap.set(cv2.CAP_PROP_POS_FRAMES, mid_idx)
+            ret, frame = cap.read()
+            if ret and frame is not None:
+                fname = f"frame_{path.stem}_{mid_idx}_{int(datetime.utcnow().timestamp())}.jpg"
+                out_path = output_dir / fname
+                cv2.imwrite(str(out_path), frame)
+                extracted_frames.append({
+                    "frame_path": str(out_path),
+                    "frame_filename": fname,
+                    "frame_number": mid_idx,
+                    "frame_timestamp": start_timestamp + timedelta(seconds=mid_idx / fps),
+                    "offset_seconds": round(mid_idx / fps, 2),
+                    "width": frame.shape[1],
+                    "height": frame.shape[0]
+                })
+
+        return extracted_frames
+    except Exception as e:
+        print(f"[MediaService] extract_frames_from_video error: {e}")
+        return extracted_frames
+    finally:
+        cap.release()
 
 
 def extract_frame_at_timestamp(video_path, target_timestamp, video_start_time, output_dir=None):
@@ -365,8 +589,16 @@ def extract_frame_at_timestamp(video_path, target_timestamp, video_start_time, o
         fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
 
-        # Calculate offset in seconds from video_start_time
-        offset_seconds = (target_timestamp - video_start_time).total_seconds() if video_start_time else 0.0
+        # Calculate offset in seconds from video_start_time (handling date projection if dates differ)
+        if video_start_time and target_timestamp:
+            if video_start_time.date() != target_timestamp.date():
+                proj_target = datetime.combine(video_start_time.date(), target_timestamp.time())
+                offset_seconds = (proj_target - video_start_time).total_seconds()
+            else:
+                offset_seconds = (target_timestamp - video_start_time).total_seconds()
+        else:
+            offset_seconds = 0.0
+
         if offset_seconds < 0:
             offset_seconds = 0.0
 

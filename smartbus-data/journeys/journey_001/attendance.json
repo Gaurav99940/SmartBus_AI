@@ -1,0 +1,16 @@
+{
+  "journey_id": 1,
+  "journey_code": "JNY-20261104-001",
+  "bus_number": "BUS-001",
+  "route_name": "Koshambi Bus Stand \u2192 Bus Depot",
+  "origin": "Koshambi Bus Stand",
+  "destination": "Bus Depot",
+  "start_time": "2026-11-04 09:15:23",
+  "end_time": null,
+  "total_passengers_observed": 220,
+  "present_passengers": 8,
+  "exited_passengers": 208,
+  "bus_capacity": 55,
+  "occupancy_rate_percentage": 400.0,
+  "generated_at": "2026-11-04 09:29:58 UTC"
+}

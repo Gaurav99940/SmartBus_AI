@@ -376,17 +376,20 @@ function renderPassengerRouteLinesList() {
                             </span>
                         </div>
 
-                        <div style="font-size:11px;line-height:1.4;">
-                            <div style="color:#10b981;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+                        <div style="font-size:11px;line-height:1.45;">
+                            <div style="color:#10b981;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
                                 <i class="bi bi-geo-alt-fill"></i> Boarded: Stop #${p.boarding_stop.order} (${p.boarding_stop.name})
                             </div>
-                            <div style="color:#0ea5e9;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+                            <div style="color:#0ea5e9;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;">
                                 <i class="bi bi-flag-fill"></i> Exit: Stop #${p.exit_stop.order} (${p.exit_stop.name})
                             </div>
-                            <div style="margin-top:4px;">
-                                <span style="background:#d1fae5;color:#065f46;font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;">
-                                    Traveled: ${p.traveled_stops_count}/${totalStops} Stops (${p.travel_percentage}%)
+                            <div style="margin-top:6px;display:flex;flex-direction:column;gap:3px;">
+                                <span style="background:#d1fae5;color:#065f46;font-size:11px;font-weight:800;padding:3px 10px;border-radius:12px;display:inline-block;border:1px solid #a7f3d0;">
+                                    <i class="bi bi-signpost-fill"></i> Traveled: ${p.traveled_stops_count} of ${totalStops} Stops (${p.travel_percentage}% Covered)
                                 </span>
+                                <div style="font-size:10px;color:var(--text-muted);font-weight:600;margin-top:1px;">
+                                    Coverage: Stop #${p.boarding_stop.order} &rarr; Stop #${p.exit_stop.order}
+                                </div>
                             </div>
                         </div>
                     </div>

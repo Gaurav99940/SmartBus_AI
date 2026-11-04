@@ -68,3 +68,11 @@ class Config:
     RETENTION_DAYS = int(os.getenv("RETENTION_DAYS", "30"))
     ANONYMIZE_FACE_CROPS = os.getenv("ANONYMIZE_FACE_CROPS", "False").lower() == "true"
     DEMO_MODE = False  # Strictly forbidden: no demo or simulated data
+
+    # Remote Image Server & GitHub Cloud Sync Configuration
+    REMOTE_IMAGE_SERVER_URL = os.getenv("REMOTE_IMAGE_SERVER_URL", "http://143.244.140.108:8060").rstrip("/")
+    GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
+    GITHUB_REPO = os.getenv("GITHUB_REPO", "Gaurav99940/SmartBus_AI")
+    GITHUB_BRANCH = os.getenv("GITHUB_BRANCH", "main")
+    SMARTBUS_DATA_DIR = BASE_DIR / "smartbus-data"
+    SMARTBUS_SYSTEM_ROLE = os.getenv("SMARTBUS_SYSTEM_ROLE", "local").lower()  # 'local' (runs AI) or 'live_server' (lightweight display only)

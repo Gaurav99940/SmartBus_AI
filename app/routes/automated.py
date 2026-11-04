@@ -225,15 +225,23 @@ def upload_browser_folder_endpoint():
     dest_dir.mkdir(parents=True, exist_ok=True)
 
     saved_count = 0
-    for f in uploaded_files:
+    for idx, f in enumerate(uploaded_files):
         if not f or not f.filename:
             continue
-        clean_name = secure_filename(os.path.basename(f.filename))
-        if not clean_name:
-            continue
-        ext = clean_name.rsplit(".", 1)[-1].lower() if "." in clean_name else ""
-        if ext in Config.ALLOWED_EXTENSIONS:
+        rel_path = request.form.get(f"rel_path_{idx}") or f.filename
+        parts = [secure_filename(p) for p in rel_path.replace('\\', '/').split('/') if p]
+        if len(parts) > 1:
+            target_sub = dest_dir.joinpath(*parts[:-1])
+            target_sub.mkdir(parents=True, exist_ok=True)
+            dest_file = target_sub / parts[-1]
+        else:
+            clean_name = secure_filename(os.path.basename(f.filename))
+            if not clean_name:
+                continue
             dest_file = dest_dir / clean_name
+
+        ext = dest_file.suffix.lower().lstrip(".")
+        if ext in Config.ALLOWED_EXTENSIONS:
             f.save(str(dest_file))
             saved_count += 1
 
@@ -577,6 +585,20 @@ def start_job():
     if not tt:
         return jsonify({"success": False, "error": "Timetable not found"}), 404
 
+    if not tt.journey_id or tt.journey_id != journey_id:
+        tt.journey_id = journey_id
+        db.session.commit()
+
+    # Automatically ensure stops are matched to latest media queues across angles
+    match_stops_to_media(timetable_id)
+
+    # Count total media files registered across angles
+    mf_count = SourceMediaFile.query.filter(
+        SourceMediaFile.status != "error"
+    ).filter(
+        (SourceMediaFile.journey_id == journey_id) | (SourceMediaFile.journey_id.is_(None))
+    ).count()
+
     # Create StopProcessingJob
     job = StopProcessingJob(
         journey_id=journey_id,
@@ -584,6 +606,10 @@ def start_job():
         status="queued",
         total_stops=len(tt.stops),
         remaining_stops=len(tt.stops),
+        total_media_files=mf_count,
+        remaining_media_files=mf_count,
+        processed_media_files=0,
+        ai_detection_status="Queued. Preparing automated stop-wise analysis...",
         job_settings_json=json.dumps(data)
     )
     db.session.add(job)

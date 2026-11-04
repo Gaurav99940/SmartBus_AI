@@ -155,6 +155,7 @@ def get_date_wise_passenger_report(
                 "observations": [],
                 "unique_canonical_ids": set(),
                 "unique_passengers_map": {},
+                "unique_gallery_map": {},
                 "gallery_crops": [],
                 "angle_sections": {
                     "A": [],
@@ -229,10 +230,31 @@ def get_date_wise_passenger_report(
         }
 
         date_groups[date_key]["observations"].append(obs_item)
-        if not is_merged:
-            date_groups[date_key]["gallery_crops"].append(obs_item)
         date_groups[date_key]["unique_canonical_ids"].add(canonical_pid)
         date_groups[date_key]["angle_sections"][section_key].append(obs_item)
+
+        # Ensure unique representative card per person in the merge / crop gallery (no repeated IDs)
+        ug_map = date_groups[date_key]["unique_gallery_map"]
+        if not is_merged:
+            if canonical_pid not in ug_map:
+                card_item = dict(obs_item)
+                card_item["total_detections"] = 1
+                card_item["first_seen_time"] = obs_dt.strftime("%Y-%m-%d %H:%M:%S") if obs_dt else "N/A"
+                card_item["last_seen_time"] = obs_dt.strftime("%Y-%m-%d %H:%M:%S") if obs_dt else "N/A"
+                card_item["stops_traveled"] = p.get_distinct_stops_count() if p else 1
+                ug_map[canonical_pid] = card_item
+            else:
+                existing_card = ug_map[canonical_pid]
+                existing_card["total_detections"] = existing_card.get("total_detections", 1) + 1
+                if p and p.get_distinct_stops_count() > existing_card.get("stops_traveled", 1):
+                    existing_card["stops_traveled"] = p.get_distinct_stops_count()
+                if has_valid_crop and (not existing_card.get("has_valid_crop") or det_conf > existing_card.get("detection_confidence", 0)):
+                    existing_card["crop_url"] = crop_url
+                    existing_card["has_valid_crop"] = True
+                    existing_card["observation_id"] = obs.id
+                    existing_card["detection_confidence"] = det_conf
+                    existing_card["detection_confidence_pct"] = round(det_conf * 100, 1)
+                    existing_card["camera_angle"] = display_angle
 
         # -------------------------------------------------------------
         # Aggregate by Unique Canonical Person (Single ID & Combined Timeline)
@@ -335,9 +357,13 @@ def get_date_wise_passenger_report(
             u_item["presence_summary"] = times_summary
             u_item["angles_str"] = ", ".join(u_item["detected_angles"])
 
-        # Update sequence_no on gallery_crops items
-        for crop_item in grp["gallery_crops"]:
+        # Deduplicate gallery_crops strictly to ONE card per unique person ID
+        unique_crops_list = list(grp.get("unique_gallery_map", {}).values())
+        unique_crops_list.sort(key=lambda c: (seq_by_canonical.get(c["canonical_person_id"], 9999), c["person_id"]))
+        for crop_item in unique_crops_list:
             crop_item["sequence_no"] = seq_by_canonical.get(crop_item["canonical_person_id"], 1)
+
+        grp["gallery_crops"] = unique_crops_list
 
         result_dates.append({
             "date": date_key,

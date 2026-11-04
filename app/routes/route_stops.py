@@ -480,9 +480,41 @@ def get_passenger_trajectories():
         })
 
     trajectories = []
+    # Build lookup maps for all_stops by ID, stop_order/stop_number, and normalized name
+    stop_by_id = {s.id: s for s in all_stops}
+    stop_by_num = {}
+    stop_by_name = {}
+    for s in all_stops:
+        s_num = getattr(s, "stop_order", None) or getattr(s, "stop_number", None)
+        if s_num is not None:
+            stop_by_num[s_num] = s
+        s_name = (getattr(s, "stop_name", "") or "").strip().lower()
+        if s_name:
+            stop_by_name[s_name] = s
+
     for idx, p in enumerate(passengers):
         # Collect all stops where passenger was ACTUALLY detected / confirmed present
         confirmed_stop_ids = set()
+
+        def add_stop_reference(raw_stop_id):
+            if not raw_stop_id:
+                return
+            if raw_stop_id in stop_by_id:
+                confirmed_stop_ids.add(raw_stop_id)
+                return
+            t_stop = TimetableStop.query.get(raw_stop_id)
+            if t_stop:
+                if t_stop.stop_number in stop_by_num:
+                    confirmed_stop_ids.add(stop_by_num[t_stop.stop_number].id)
+                elif t_stop.stop_name.strip().lower() in stop_by_name:
+                    confirmed_stop_ids.add(stop_by_name[t_stop.stop_name.strip().lower()].id)
+                return
+            r_stop = RouteStop.query.get(raw_stop_id)
+            if r_stop:
+                if r_stop.stop_order in stop_by_num:
+                    confirmed_stop_ids.add(stop_by_num[r_stop.stop_order].id)
+                elif r_stop.stop_name.strip().lower() in stop_by_name:
+                    confirmed_stop_ids.add(stop_by_name[r_stop.stop_name.strip().lower()].id)
 
         # Parse traveled_stops_json if available
         traveled_entries = []
@@ -496,18 +528,17 @@ def get_passenger_trajectories():
         for tentry in traveled_entries:
             ts_num = tentry.get("stop_number")
             ts_name = (tentry.get("stop_name") or "").strip().lower()
-            for s in all_stops:
-                s_order = getattr(s, "stop_order", None) or getattr(s, "stop_number", None)
-                s_name = (getattr(s, "stop_name", "") or "").strip().lower()
-                if (ts_num is not None and s_order is not None and ts_num == s_order) or (ts_name and ts_name == s_name):
-                    confirmed_stop_ids.add(s.id)
+            if ts_num is not None and ts_num in stop_by_num:
+                confirmed_stop_ids.add(stop_by_num[ts_num].id)
+            elif ts_name and ts_name in stop_by_name:
+                confirmed_stop_ids.add(stop_by_name[ts_name].id)
 
         # 2. Check observations & uploads
         for obs in p.observations:
             if obs.route_stop_id:
-                confirmed_stop_ids.add(obs.route_stop_id)
+                add_stop_reference(obs.route_stop_id)
             elif obs.upload and obs.upload.route_stop_id:
-                confirmed_stop_ids.add(obs.upload.route_stop_id)
+                add_stop_reference(obs.upload.route_stop_id)
             elif obs.upload and getattr(obs.upload, "latitude", None) and getattr(obs.upload, "longitude", None):
                 gps_stops = [s for s in all_stops if getattr(s, "latitude", None) is not None and getattr(s, "longitude", None) is not None]
                 if gps_stops:
@@ -517,7 +548,7 @@ def get_passenger_trajectories():
         # 3. Check presence events
         for ev in p.events:
             if ev.route_stop_id:
-                confirmed_stop_ids.add(ev.route_stop_id)
+                add_stop_reference(ev.route_stop_id)
             elif getattr(ev, "latitude", None) and getattr(ev, "longitude", None):
                 gps_stops = [s for s in all_stops if getattr(s, "latitude", None) is not None and getattr(s, "longitude", None) is not None]
                 if gps_stops:
@@ -526,20 +557,14 @@ def get_passenger_trajectories():
 
         # 4. Check explicit boarding / exit stop id and numbers
         if p.boarding_stop_id:
-            confirmed_stop_ids.add(p.boarding_stop_id)
+            add_stop_reference(p.boarding_stop_id)
         if p.exit_stop_id:
-            confirmed_stop_ids.add(p.exit_stop_id)
+            add_stop_reference(p.exit_stop_id)
 
-        if p.boarding_stop_number:
-            for s in all_stops:
-                s_order = getattr(s, "stop_order", None) or getattr(s, "stop_number", None)
-                if s_order == p.boarding_stop_number:
-                    confirmed_stop_ids.add(s.id)
-        if p.exit_stop_number:
-            for s in all_stops:
-                s_order = getattr(s, "stop_order", None) or getattr(s, "stop_number", None)
-                if s_order == p.exit_stop_number:
-                    confirmed_stop_ids.add(s.id)
+        if p.boarding_stop_number and p.boarding_stop_number in stop_by_num:
+            confirmed_stop_ids.add(stop_by_num[p.boarding_stop_number].id)
+        if p.exit_stop_number and p.exit_stop_number in stop_by_num:
+            confirmed_stop_ids.add(stop_by_num[p.exit_stop_number].id)
 
         if not confirmed_stop_ids and getattr(p, "first_latitude", None) and getattr(p, "first_longitude", None):
             gps_stops = [s for s in all_stops if getattr(s, "latitude", None) is not None and getattr(s, "longitude", None) is not None]
@@ -571,8 +596,8 @@ def get_passenger_trajectories():
         traveled_stop_ids = present_stop_ids
         non_traveled_stop_ids = absent_stop_ids
 
-        traveled_count = len(traveled_stop_ids)
-        travel_pct = round((traveled_count / stops_count) * 100, 1)
+        traveled_count = max(len(traveled_stop_ids), p.get_distinct_stops_count(), len(traveled_entries))
+        travel_pct = round((traveled_count / stops_count) * 100, 1) if stops_count > 0 else 0.0
 
         b_order = getattr(boarding_stop, "stop_order", None) or getattr(boarding_stop, "stop_number", 1)
         b_time = getattr(boarding_stop, "time_window", None) or (boarding_stop.scheduled_arrival.strftime("%I:%M %p") if getattr(boarding_stop, "scheduled_arrival", None) else None)
@@ -581,6 +606,8 @@ def get_passenger_trajectories():
 
         all_angles = p.get_detected_angles()
         first_ang = p.get_first_observed_angle()
+
+        covered_names = [getattr(s, "stop_name", f"Stop #{getattr(s, 'stop_order', i+1)}") for i, s in enumerate(all_stops) if s.id in traveled_stop_slice]
 
         trajectories.append({
             "id": p.id,
@@ -614,7 +641,11 @@ def get_passenger_trajectories():
                 "lon": getattr(exit_stop, "longitude", None)
             },
             "traveled_stops_count": traveled_count,
+            "total_route_stops": stops_count,
             "travel_percentage": travel_pct,
+            "traveled_summary": f"Traveled {traveled_count} of {stops_count} Stops ({travel_pct}%)",
+            "coverage_desc": f"Stop #{b_order} ({getattr(boarding_stop, 'stop_name', '')}) ➔ Stop #{e_order} ({getattr(exit_stop, 'stop_name', '')})",
+            "covered_stop_names": covered_names,
             "traveled_stop_ids": traveled_stop_ids,
             "non_traveled_stop_ids": non_traveled_stop_ids
         })

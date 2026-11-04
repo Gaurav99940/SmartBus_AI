@@ -399,19 +399,28 @@ function renderDateSections(data) {
 
                 <hr style="border:0;border-top:1px solid var(--border-color);margin:24px 0;">
 
-                <!-- SECTION: PASSENGERS DETECTED ON THIS DATE (Crop Gallery) -->
+                <!-- SECTION: PASSENGERS DETECTED ON THIS DATE (Crop Gallery - Strictly One Card Per Unique Person ID) -->
                 ${(() => {
-                    const activeGalleryCrops = (dateGroup.gallery_crops || []).filter(c => !c.is_merged);
+                    const seenPids = new Set();
+                    const activeGalleryCrops = [];
+                    (dateGroup.gallery_crops || []).forEach(c => {
+                        const pid = c.canonical_person_id || c.person_id;
+                        if (pid && !seenPids.has(pid) && !c.is_merged) {
+                            seenPids.add(pid);
+                            activeGalleryCrops.push(c);
+                        }
+                    });
+                    currentGalleryItems.push(...activeGalleryCrops);
                     return `
                     <div class="gallery-wrapper" style="margin-bottom:16px;">
                         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
                             <div>
                                 <h4 style="font-size:15px;font-weight:700;margin:0;color:var(--text-main);display:flex;align-items:center;gap:8px;">
                                     <i class="bi bi-images text-primary"></i> PASSENGERS DETECTED ON THIS DATE
-                                    <span class="badge bg-primary" style="font-size:11px;padding:3px 8px;border-radius:12px;">${activeGalleryCrops.length} Active Passengers</span>
+                                    <span class="badge bg-primary" style="font-size:11px;padding:3px 8px;border-radius:12px;">${activeGalleryCrops.length} Active Passengers (Unique IDs)</span>
                                 </h4>
                                 <p style="font-size:12px;color:var(--text-muted);margin:3px 0 0 0;">
-                                    Verified crop images matching report observations for ${dateGroup.date_formatted}. Merged duplicate identities are safely consolidated. Select checkboxes to merge duplicate identities.
+                                    Single card per unique person ID. Multiple detections across angles are consolidated under their Master ID. Select checkboxes to merge duplicate identities.
                                 </p>
                             </div>
                             <div style="display:flex;gap:8px;align-items:center;">
@@ -612,7 +621,7 @@ function renderCropGalleryCards(crops, dateStr) {
                     </div>
                     ${aliasTag}
                     <div class="crop-meta-row">
-                        <span class="badge-conf" title="Confirmed detections on this date">${crop.total_detections ? `${crop.total_detections}x Det` : `${crop.detection_confidence_pct}%`}</span>
+                        <span class="badge-conf" title="Confirmed detections & stops traveled">${crop.stops_traveled && crop.stops_traveled > 1 ? `<i class="bi bi-signpost-fill"></i> ${crop.stops_traveled} Stops` : (crop.total_detections ? `${crop.total_detections}x Det` : `${crop.detection_confidence_pct}%`)}</span>
                         <span class="crop-time" title="${crop.presence_summary || crop.observation_time}">${crop.first_seen_time ? crop.first_seen_time.split(' ')[1] : (crop.observation_time ? crop.observation_time.split(' ')[1] : '')}</span>
                     </div>
                 </div>

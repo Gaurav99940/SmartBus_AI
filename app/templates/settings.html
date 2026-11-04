@@ -174,6 +174,102 @@
     </div>
 </div>
 
+<!-- Cloud Report Synchronization & Live Server Dashboard Integration -->
+<div class="card" id="cloud-sync-section" style="margin-bottom:24px;">
+    <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+        <span><i class="bi bi-cloud-arrow-up-fill text-primary"></i> GitHub Report Sync & Live Website Integration</span>
+        <div style="display:flex;gap:8px;">
+            <button class="btn-secondary" style="padding:4px 10px;font-size:12px;" onclick="loadCloudSyncStatus()"><i class="bi bi-arrow-clockwise"></i> Refresh Status</button>
+            <button class="btn-primary" style="padding:4px 12px;font-size:12px;background:#0284c7;border-color:#0284c7;" onclick="publishReportsFromSettings()"><i class="bi bi-cloud-upload-fill"></i> Publish Latest Reports</button>
+        </div>
+    </div>
+
+    <!-- Status Overview Grid -->
+    <div style="display:grid;grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));gap:12px;margin-bottom:20px;">
+        <div style="background:var(--bg-card-hover);padding:14px;border-radius:var(--radius-sm);border:1px solid var(--border-color);">
+            <div style="font-size:11px;color:var(--text-muted);font-weight:600;">System Processing Role</div>
+            <div style="font-size:16px;font-weight:800;color:#059669;margin:4px 0;" id="cs-system-role">Local PC (AI Engine)</div>
+            <small style="font-size:11px;color:var(--text-muted);">Runs heavy models locally; publishes reports to cloud.</small>
+        </div>
+        <div style="background:var(--bg-card-hover);padding:14px;border-radius:var(--radius-sm);border:1px solid var(--border-color);">
+            <div style="font-size:11px;color:var(--text-muted);font-weight:600;">GitHub Repository</div>
+            <div style="font-size:15px;font-weight:800;color:var(--text-main);margin:4px 0;word-break:break-all;" id="cs-github-repo">Gaurav99940/SmartBus_AI</div>
+            <small style="font-size:11px;color:var(--text-muted);">Branch: <span id="cs-github-branch">main</span> | <span id="cs-github-token-badge" class="badge-status badge-present">Token Configured</span></small>
+        </div>
+        <div style="background:var(--bg-card-hover);padding:14px;border-radius:var(--radius-sm);border:1px solid var(--border-color);">
+            <div style="font-size:11px;color:var(--text-muted);font-weight:600;">Remote Image Server</div>
+            <div style="font-size:15px;font-weight:800;color:#0284c7;margin:4px 0;" id="cs-remote-url">143.244.140.108:8060</div>
+            <small style="font-size:11px;" id="cs-remote-status-text"><span class="badge-status badge-present"><i class="bi bi-check-circle-fill"></i> Connected</span></small>
+        </div>
+        <div style="background:var(--bg-card-hover);padding:14px;border-radius:var(--radius-sm);border:1px solid var(--border-color);">
+            <div style="font-size:11px;color:var(--text-muted);font-weight:600;">Published Journeys & Reports</div>
+            <div style="font-size:18px;font-weight:800;color:var(--text-main);margin:4px 0;" id="cs-published-count">0 Journeys</div>
+            <small style="font-size:11px;color:var(--text-muted);">Last Sync: <span id="cs-last-sync-time">Never</span></small>
+        </div>
+    </div>
+
+    <!-- Live Sync Action Strip -->
+    <div style="background:var(--bg-app);border:1px solid var(--border-color);border-radius:var(--radius-sm);padding:14px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+        <div>
+            <div style="font-size:13px;font-weight:700;color:var(--text-main);"><i class="bi bi-info-circle-fill text-primary"></i> Live Server Report Distribution</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">
+                Generated PDF/CSV/Excel reports and passenger records are saved to <code>smartbus-data/</code> and synced to GitHub for live web viewing without running server-side AI.
+            </div>
+        </div>
+        <div style="display:flex;gap:8px;">
+            <button class="btn-secondary" style="padding:6px 12px;font-size:12px;" onclick="testRemoteServerConnection()"><i class="bi bi-wifi"></i> Ping Remote Server</button>
+            <button class="btn-secondary" style="padding:6px 12px;font-size:12px;" onclick="pullCloudReportsFromSettings()"><i class="bi bi-cloud-download"></i> Ingest Cloud Reports (Server Mode)</button>
+        </div>
+    </div>
+</div>
+
+<!-- Remote Image Server Management (http://143.244.140.108:8060) -->
+<div class="card" id="remote-image-section" style="margin-bottom:24px;">
+    <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+        <span><i class="bi bi-server text-primary"></i> Remote Image Server Management <small style="font-size:12px;color:var(--text-muted);font-weight:normal;">(http://143.244.140.108:8060)</small></span>
+        <div style="display:flex;gap:8px;align-items:center;">
+            <input type="file" id="remote-image-upload-input" multiple accept="image/*" style="display:none;" onchange="handleRemoteImageUpload(this)">
+            <button class="btn-primary" style="padding:4px 12px;font-size:12px;" onclick="document.getElementById('remote-image-upload-input').click()"><i class="bi bi-upload"></i> Upload Images to Server</button>
+            <button class="btn-secondary" style="padding:4px 10px;font-size:12px;" onclick="loadRemoteImages(0)"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
+            <button class="btn-secondary" id="btn-bulk-delete-remote" style="padding:4px 10px;font-size:12px;color:#dc2626;display:none;" onclick="deleteSelectedRemoteImages()"><i class="bi bi-trash3 text-danger"></i> Delete Selected (<span id="selected-remote-count">0</span>)</button>
+        </div>
+    </div>
+
+    <!-- Summary Bar -->
+    <div style="display:flex;justify-content:space-between;align-items:center;background:var(--bg-app);padding:10px 14px;border-radius:var(--radius-sm);margin-bottom:14px;border:1px solid var(--border-color);font-size:12px;">
+        <div>
+            <strong>Server Status:</strong> <span id="remote-server-badge" class="badge-status badge-present">Checking...</span>
+            <span style="margin-left:14px;color:var(--text-muted);">Total Images on Server: <strong id="remote-total-count" style="color:var(--text-main);">0</strong></span>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;">
+            <label style="margin:0;cursor:pointer;display:flex;align-items:center;gap:6px;">
+                <input type="checkbox" id="select-all-remote-images" onchange="toggleSelectAllRemoteImages(this.checked)">
+                Select All
+            </label>
+        </div>
+    </div>
+
+    <!-- Image Grid / Table -->
+    <div class="table-responsive" style="max-height:360px;overflow-y:auto;border:1px solid var(--border-color);border-radius:var(--radius-sm);">
+        <table class="custom-table" style="font-size:12px;">
+            <thead>
+                <tr>
+                    <th style="width:36px;"></th>
+                    <th style="width:60px;">Preview</th>
+                    <th>Filename</th>
+                    <th>Size</th>
+                    <th>Created At</th>
+                    <th>Active Report Reference</th>
+                    <th style="width:90px;">Action</th>
+                </tr>
+            </thead>
+            <tbody id="remote-images-tbody">
+                <tr><td colspan="7" class="text-center py-4" style="color:var(--text-muted);">Loading remote server images...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
 <!-- Audit Log Viewer -->
 <div class="card">
     <div class="card-title">
@@ -206,6 +302,8 @@
 document.addEventListener("DOMContentLoaded", () => {
     loadThresholds();
     loadAuditLogs();
+    loadCloudSyncStatus();
+    loadRemoteImages(0);
 });
 
 async function loadThresholds() {
@@ -400,6 +498,317 @@ async function deleteSettingsSingleJourney(journeyId, journeyCode) {
         }
     } catch (e) {
         showToast("Error: " + e.message, "error");
+    }
+}
+
+// ============================================================================
+// CLOUD SYNC & GITHUB REPORT INTEGRATION
+// ============================================================================
+
+async function loadCloudSyncStatus() {
+    try {
+        const res = await fetch("/api/sync/status");
+        if (!res.ok) return;
+        const data = await res.json();
+
+        // System role
+        const roleEl = document.getElementById("cs-system-role");
+        if (roleEl) {
+            roleEl.textContent = data.system_role === "live_server" ? "Live Server (Dashboard Mode)" : "Local PC (AI Inference Engine)";
+            roleEl.style.color = data.system_role === "live_server" ? "#0284c7" : "#059669";
+        }
+
+        // GitHub repo
+        const repoEl = document.getElementById("cs-github-repo");
+        if (repoEl && data.github) repoEl.textContent = data.github.repo || "Gaurav99940/SmartBus_AI";
+        const branchEl = document.getElementById("cs-github-branch");
+        if (branchEl && data.github) branchEl.textContent = data.github.branch || "main";
+
+        const tokenBadge = document.getElementById("cs-github-token-badge");
+        if (tokenBadge && data.github) {
+            tokenBadge.className = data.github.has_token ? "badge-status badge-present" : "badge-status badge-exit-confirmed";
+            tokenBadge.textContent = data.github.has_token ? "Token Configured" : "Git CLI Mode";
+        }
+
+        // Remote Server
+        const srv = data.remote_image_server || {};
+        const srvUrl = document.getElementById("cs-remote-url");
+        if (srvUrl && srv.server_url) srvUrl.textContent = srv.server_url.replace("http://", "");
+
+        const srvStatus = document.getElementById("cs-remote-status-text");
+        if (srvStatus) {
+            srvStatus.innerHTML = srv.connected
+                ? `<span class="badge-status badge-present"><i class="bi bi-check-circle-fill"></i> Connected (${srv.total_images || 0} images)</span>`
+                : `<span class="badge-status badge-exit-confirmed"><i class="bi bi-exclamation-triangle-fill"></i> Offline</span>`;
+        }
+
+        // Published counts & last sync
+        const pubCount = document.getElementById("cs-published-count");
+        if (pubCount) pubCount.textContent = `${data.published_journeys_count || 0} Journeys`;
+
+        const lastSync = document.getElementById("cs-last-sync-time");
+        if (lastSync) lastSync.textContent = data.last_published_manifest || "Never";
+
+    } catch (e) {
+        console.error("Failed to load sync status:", e);
+    }
+}
+
+async function testRemoteServerConnection() {
+    showToast("Pinging remote image server (http://143.244.140.108:8060)...", "info");
+    try {
+        const res = await fetch("/api/remote-images/test");
+        const data = await res.json();
+        if (res.ok && data.connected) {
+            showToast(`Server Connected! Found ${data.total_images} active images on remote server.`, "success");
+            loadCloudSyncStatus();
+            loadRemoteImages(0);
+        } else {
+            showToast(data.error || "Cannot reach remote image server.", "error");
+        }
+    } catch (e) {
+        showToast("Connection failed: " + e.message, "error");
+    }
+}
+
+async function publishReportsFromSettings() {
+    if (!confirm("Export and publish all journey reports (PDF, CSV, Excel, thumbnails) to GitHub and remote server?")) {
+        return;
+    }
+
+    showToast("Publishing reports to GitHub and remote server... Please wait.", "info");
+    try {
+        const res = await fetch("/api/sync/publish-latest", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ upload_remote_crops: true })
+        });
+        const data = await res.json();
+        if (res.ok) {
+            showToast(data.message || "Reports published successfully!", "success");
+            loadCloudSyncStatus();
+            loadRemoteImages(0);
+        } else {
+            showToast(data.error || "Publishing failed.", "error");
+        }
+    } catch (e) {
+        showToast("Error: " + e.message, "error");
+    }
+}
+
+async function pullCloudReportsFromSettings() {
+    showToast("Pulling and ingesting latest published reports into database...", "info");
+    try {
+        const res = await fetch("/api/sync/pull-from-github", { method: "POST" });
+        const data = await res.json();
+        if (res.ok) {
+            showToast(`Ingested ${data.journeys_ingested || 0} journeys and ${data.passengers_synced || 0} passenger records without AI inference.`, "success");
+            loadCloudSyncStatus();
+        } else {
+            showToast(data.error || "Failed to ingest reports.", "error");
+        }
+    } catch (e) {
+        showToast("Error: " + e.message, "error");
+    }
+}
+
+// ============================================================================
+// REMOTE IMAGE SERVER MANAGEMENT
+// ============================================================================
+
+let currentRemoteImages = [];
+
+async function loadRemoteImages(offset = 0) {
+    const tbody = document.getElementById("remote-images-tbody");
+    if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="text-center py-4" style="color:var(--text-muted);"><i class="bi bi-arrow-repeat spin"></i> Loading remote images...</td></tr>`;
+
+    try {
+        const res = await fetch(`/api/remote-images?limit=100&offset=${offset}`);
+        const data = await res.json();
+
+        const badge = document.getElementById("remote-server-badge");
+        const countEl = document.getElementById("remote-total-count");
+
+        if (!res.ok || !data.success) {
+            if (badge) {
+                badge.className = "badge-status badge-exit-confirmed";
+                badge.textContent = "Offline / Error";
+            }
+            if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="text-center py-4" style="color:#dc2626;">Failed to load remote images: ${data.error || "Unknown error"}</td></tr>`;
+            return;
+        }
+
+        if (badge) {
+            badge.className = "badge-status badge-present";
+            badge.textContent = "Online";
+        }
+        if (countEl) countEl.textContent = data.total;
+
+        currentRemoteImages = data.images || [];
+
+        if (currentRemoteImages.length === 0) {
+            if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="text-center py-4" style="color:var(--text-muted);">No images found on remote server.</td></tr>`;
+            return;
+        }
+
+        if (tbody) {
+            tbody.innerHTML = currentRemoteImages.map(img => {
+                const viewUrl = img.view_url || (img.static_url ? `http://143.244.140.108:8060${img.static_url}` : "");
+                const refHtml = img.is_referenced
+                    ? `<span class="badge-status badge-present" style="font-size:10px;"><i class="bi bi-shield-lock-fill"></i> ${escapeHtml(img.reference_label)}</span>`
+                    : `<span style="color:var(--text-muted);font-size:11px;">Unreferenced</span>`;
+
+                return `
+                    <tr>
+                        <td style="text-align:center;">
+                            <input type="checkbox" class="remote-img-check" value="${escapeHtml(img.filename)}" onchange="updateBulkDeleteButton()">
+                        </td>
+                        <td>
+                            <a href="${viewUrl}" target="_blank" title="View Full Image">
+                                <img src="${viewUrl}" alt="${escapeHtml(img.filename)}" style="width:40px;height:40px;object-fit:cover;border-radius:4px;border:1px solid var(--border-color);background:#000;" onerror="this.onerror=null;this.src='/static/img/bus_default.png';">
+                            </a>
+                        </td>
+                        <td>
+                            <strong>${escapeHtml(img.filename)}</strong>
+                            <div style="font-size:10px;color:var(--text-muted);">${escapeHtml(viewUrl)}</div>
+                        </td>
+                        <td>${img.size_kb} KB</td>
+                        <td><small>${img.created_at || "N/A"}</small></td>
+                        <td>${refHtml}</td>
+                        <td>
+                            <button class="btn-secondary" style="padding:2px 8px;font-size:11px;color:#dc2626;" onclick="deleteSingleRemoteImage('${escapeHtml(img.filename)}', ${img.is_referenced})">
+                                <i class="bi bi-trash3 text-danger"></i> Delete
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join("");
+        }
+    } catch (e) {
+        console.error("Remote images load error:", e);
+        if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="text-center py-4" style="color:#dc2626;">Error: ${e.message}</td></tr>`;
+    }
+}
+
+function toggleSelectAllRemoteImages(checked) {
+    const checkboxes = document.querySelectorAll(".remote-img-check");
+    checkboxes.forEach(cb => cb.checked = checked);
+    updateBulkDeleteButton();
+}
+
+function updateBulkDeleteButton() {
+    const checked = document.querySelectorAll(".remote-img-check:checked");
+    const btn = document.getElementById("btn-bulk-delete-remote");
+    const countSpan = document.getElementById("selected-remote-count");
+    if (btn && countSpan) {
+        countSpan.textContent = checked.length;
+        btn.style.display = checked.length > 0 ? "inline-flex" : "none";
+    }
+}
+
+async function handleRemoteImageUpload(input) {
+    const files = input.files;
+    if (!files || files.length === 0) return;
+
+    const formData = new FormData();
+    for (let i = 0; i < files.length; i++) {
+        formData.append("files", files[i]);
+    }
+
+    showToast(`Uploading ${files.length} image(s) to remote server...`, "info");
+    try {
+        const res = await fetch("/api/remote-images/upload", {
+            method: "POST",
+            body: formData
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            showToast(`Successfully uploaded ${data.total_uploaded} image(s) to remote server!`, "success");
+            input.value = "";
+            loadRemoteImages(0);
+        } else {
+            showToast(data.error || "Upload failed.", "error");
+        }
+    } catch (e) {
+        showToast("Upload error: " + e.message, "error");
+    }
+}
+
+async function deleteSingleRemoteImage(filename, isReferenced = false) {
+    let force = false;
+    if (isReferenced) {
+        if (!confirm(`WARNING: '${filename}' is referenced by an active passenger record or report!\n\nDeleting it will remove the face crop from live reports. Are you sure you want to force delete?`)) {
+            return;
+        }
+        force = true;
+    } else {
+        if (!confirm(`Delete image '${filename}' from remote server?`)) {
+            return;
+        }
+    }
+
+    try {
+        const res = await fetch(`/api/remote-images/${encodeURIComponent(filename)}?force=${force}`, {
+            method: "DELETE"
+        });
+        const data = await res.json();
+        if (res.status === 409 && data.requires_confirmation) {
+            if (confirm(`${data.warning}\n\nForce delete anyway?`)) {
+                await deleteSingleRemoteImage(filename, true);
+            }
+            return;
+        }
+        if (res.ok) {
+            showToast(data.message || `Deleted ${filename}`, "success");
+            loadRemoteImages(0);
+        } else {
+            showToast(data.error || "Failed to delete image.", "error");
+        }
+    } catch (e) {
+        showToast("Delete error: " + e.message, "error");
+    }
+}
+
+async function deleteSelectedRemoteImages() {
+    const checked = Array.from(document.querySelectorAll(".remote-img-check:checked")).map(cb => cb.value);
+    if (checked.length === 0) return;
+
+    if (!confirm(`Permanently delete ${checked.length} selected image(s) from remote server?`)) {
+        return;
+    }
+
+    try {
+        const res = await fetch("/api/remote-images/delete-bulk", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ filenames: checked, force: false })
+        });
+        const data = await res.json();
+        if (res.status === 409 && data.requires_confirmation) {
+            if (confirm(`${data.warning}\n\nForce delete all selected images?`)) {
+                const resForce = await fetch("/api/remote-images/delete-bulk", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ filenames: checked, force: true })
+                });
+                const dataForce = await resForce.json();
+                if (resForce.ok) {
+                    showToast(`Deleted ${dataForce.deleted_count} remote image(s).`, "success");
+                    loadRemoteImages(0);
+                    return;
+                }
+            } else {
+                return;
+            }
+        }
+        if (res.ok) {
+            showToast(`Deleted ${data.deleted_count} remote image(s).`, "success");
+            loadRemoteImages(0);
+        } else {
+            showToast(data.error || "Failed to delete images.", "error");
+        }
+    } catch (e) {
+        showToast("Bulk delete error: " + e.message, "error");
     }
 }
 

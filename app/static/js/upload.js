@@ -13,6 +13,13 @@ const selectedAngleFiles = {
     C: null
 };
 
+// Independent individual and multi-file queues per angle
+const individualAngleFiles = {
+    A: [],
+    B: [],
+    C: []
+};
+
 // Cached configs and results
 let cameraAngleConfigs = {};
 let latestMultiAngleResults = null;
@@ -342,11 +349,39 @@ async function extractFilesFromDataTransfer(dataTransfer) {
 
 function handleAngleFileInputChange(angle, fileList) {
     if (!fileList || fileList.length === 0) return;
-    if (fileList.length === 1) {
-        handleAngleFileSelected(angle, fileList[0], false);
-    } else {
-        handleBrowserFolderSelected(angle, fileList, `Selected Clips (${fileList.length} files)`);
+    const lower = angle.toLowerCase();
+    const files = Array.from(fileList);
+    individualAngleFiles[angle] = files;
+
+    const videoExts = [".mp4", ".avi", ".mov", ".mkv", ".wmv", ".webm", ".m4v", ".ts", ".flv", ".3gp", ".dav"];
+    const isVid = (f) => (f.type && f.type.startsWith("video/")) || videoExts.some(ext => f.name.toLowerCase().endsWith(ext));
+    const isImg = (f) => (f.type && f.type.startsWith("image/")) || /\.(jpg|jpeg|png|webp|bmp|tiff|tif|jfif)$/i.test(f.name);
+
+    const clips = files.filter(isVid);
+    const images = files.filter(isImg);
+
+    const statusBadge = document.getElementById(`folder-status-${lower}`);
+    const pathDisplay = document.getElementById(`folder-path-display-${lower}`);
+    const clipsCountEl = document.getElementById(`folder-clips-count-${lower}`);
+    const imagesCountEl = document.getElementById(`folder-images-count-${lower}`);
+    const totalCountEl = document.getElementById(`folder-total-count-${lower}`);
+
+    if (statusBadge) {
+        statusBadge.textContent = `${files.length} Ready (${clips.length} clips, ${images.length} imgs)`;
+        statusBadge.className = "badge-status badge-present";
+        statusBadge.style.background = "#dbeafe";
+        statusBadge.style.color = "#1d4ed8";
     }
+    if (pathDisplay) {
+        const previewName = files.length === 1 ? files[0].name : `${files[0].name} (+${files.length - 1} more)`;
+        pathDisplay.innerHTML = `Files: <strong style="color:var(--accent-primary);"><i class="bi bi-file-earmark-play"></i> ${previewName}</strong> <span class="badge-status badge-present" style="font-size:10px;padding:2px 6px;">${files.length} Item(s)</span>`;
+    }
+    if (clipsCountEl) clipsCountEl.textContent = clips.length;
+    if (imagesCountEl) imagesCountEl.textContent = images.length;
+    if (totalCountEl) totalCountEl.textContent = files.length;
+
+    // Load first file for preview and timestamp extraction
+    handleAngleFileSelected(angle, files[0], true);
 }
 
 function setupAngleDropzones() {
@@ -492,50 +527,50 @@ async function handleAngleFileSelected(angle, file, isFromFolder = false) {
 
     updateReadinessSummary();
 
-    // Pre-inspect EXIF metadata for individual timestamp and GPS
-    const formData = new FormData();
-    formData.append("photo", file);
+    // Pre-inspect EXIF metadata (only for single uploaded images, never block folder selection)
+    if (!isFromFolder && !isVideo) {
+        const formData = new FormData();
+        formData.append("photo", file);
 
-    try {
-        const res = await fetch("/api/uploads/inspect-metadata", {
+        fetch("/api/uploads/inspect-metadata", {
             method: "POST",
             body: formData
+        }).then(async (res) => {
+            if (res.ok) {
+                const data = await res.json();
+                const tsInput = document.getElementById(`timestamp-${lower}`);
+                const masterTsInput = document.getElementById("input-timestamp");
+
+                if (data.capture_timestamp) {
+                    if (tsInput) tsInput.value = data.capture_timestamp;
+                    if (masterTsInput && !masterTsInput.value) masterTsInput.value = data.capture_timestamp;
+                } else {
+                    const now = new Date();
+                    const pad = (n) => n.toString().padStart(2, "0");
+                    const defaultTime = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+                    if (tsInput && !tsInput.value) tsInput.value = defaultTime;
+                    if (masterTsInput && !masterTsInput.value) masterTsInput.value = defaultTime;
+                }
+
+                if (data.latitude !== null && data.longitude !== null) {
+                    updateCoordInputs(data.latitude, data.longitude, "EXIF");
+                    if (pickerMap && pickerMarker) {
+                        pickerMap.setView([data.latitude, data.longitude], 15);
+                        pickerMarker.setLatLng([data.latitude, data.longitude]);
+                    }
+                }
+
+                if (data.warnings && data.warnings.length > 0) {
+                    const warnBox = document.getElementById("metadata-warnings");
+                    if (warnBox) {
+                        warnBox.innerHTML = `<strong>Angle ${angle} Metadata Notice:</strong> ` + data.warnings.join(" | ");
+                        warnBox.style.display = "block";
+                    }
+                }
+            }
+        }).catch((err) => {
+            console.warn("Inspect metadata background error:", err);
         });
-
-        if (res.ok) {
-            const data = await res.json();
-            const tsInput = document.getElementById(`timestamp-${lower}`);
-            const masterTsInput = document.getElementById("input-timestamp");
-
-            if (data.capture_timestamp) {
-                if (tsInput) tsInput.value = data.capture_timestamp;
-                if (masterTsInput && !masterTsInput.value) masterTsInput.value = data.capture_timestamp;
-            } else {
-                const now = new Date();
-                const pad = (n) => n.toString().padStart(2, "0");
-                const defaultTime = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
-                if (tsInput && !tsInput.value) tsInput.value = defaultTime;
-                if (masterTsInput && !masterTsInput.value) masterTsInput.value = defaultTime;
-            }
-
-            if (data.latitude !== null && data.longitude !== null) {
-                updateCoordInputs(data.latitude, data.longitude, "EXIF");
-                if (pickerMap && pickerMarker) {
-                    pickerMap.setView([data.latitude, data.longitude], 15);
-                    pickerMarker.setLatLng([data.latitude, data.longitude]);
-                }
-            }
-
-            if (data.warnings && data.warnings.length > 0) {
-                const warnBox = document.getElementById("metadata-warnings");
-                if (warnBox) {
-                    warnBox.innerHTML = `<strong>Angle ${angle} Metadata Notice:</strong> ` + data.warnings.join(" | ");
-                    warnBox.style.display = "block";
-                }
-            }
-        }
-    } catch (e) {
-        console.error(`Metadata inspection error for Angle ${angle}:`, e);
     }
 }
 
@@ -675,9 +710,23 @@ function useDeviceGPS() {
 // ----------------------------------------------------------------------------
 
 async function submitMultiAnglePhotos() {
-    const selectedKeys = Object.keys(selectedAngleFiles).filter(k => selectedAngleFiles[k] !== null);
-    if (selectedKeys.length === 0) {
-        showToast("Please select at least one bus camera-angle photo (Angle A, B, or C) to upload.", "error");
+    // Gather all files to process across Angle A, B, C
+    const angleQueues = {};
+    ["A", "B", "C"].forEach(angle => {
+        if (individualAngleFiles[angle] && individualAngleFiles[angle].length > 0) {
+            angleQueues[angle] = individualAngleFiles[angle];
+        } else if (browserAttachedFolders[angle] && browserAttachedFolders[angle].allFiles && browserAttachedFolders[angle].allFiles.length > 0) {
+            angleQueues[angle] = browserAttachedFolders[angle].allFiles;
+        } else if (selectedAngleFiles[angle]) {
+            angleQueues[angle] = [selectedAngleFiles[angle]];
+        } else {
+            angleQueues[angle] = [];
+        }
+    });
+
+    const activeAngles = Object.keys(angleQueues).filter(k => angleQueues[k].length > 0);
+    if (activeAngles.length === 0) {
+        showToast("Please select at least one bus camera-angle photo or video clip (Angle A, B, or C) to upload.", "error");
         return;
     }
 
@@ -698,24 +747,29 @@ async function submitMultiAnglePhotos() {
     formData.append("capture_timestamp", document.getElementById("input-timestamp").value);
     formData.append("stop_id", document.getElementById("stop-select")?.value || "");
 
-    // Append individual angle photos and their individual timestamps
-    selectedKeys.forEach(angle => {
+    let totalFilesCount = 0;
+    activeAngles.forEach(angle => {
         const lower = angle.toLowerCase();
-        formData.append(`photo_${lower}`, selectedAngleFiles[angle]);
+        const files = angleQueues[angle];
+        totalFilesCount += files.length;
+        files.forEach(f => {
+            formData.append(`photo_${lower}`, f);
+            formData.append(`files_${lower}`, f);
+        });
         const tsVal = document.getElementById(`timestamp-${lower}`).value;
         if (tsVal) formData.append(`capture_timestamp_${lower}`, tsVal);
 
         // Update card status to processing
         const badge = document.getElementById(`status-badge-${lower}`);
         if (badge) {
-            badge.textContent = "Processing...";
+            badge.textContent = `Processing (${files.length} items)...`;
             badge.className = "badge-status badge-possibly-absent";
         }
     });
 
     const submitBtn = document.getElementById("submit-upload-btn");
     submitBtn.disabled = true;
-    submitBtn.innerHTML = `<i class="bi bi-cpu"></i> Running Multi-Angle AI Detection Pipeline...`;
+    submitBtn.innerHTML = `<i class="bi bi-cpu"></i> Processing ${totalFilesCount} Media File(s) Across Bus Angles...`;
 
     try {
         const res = await fetch("/api/uploads/multi-angle", {
@@ -730,12 +784,20 @@ async function submitMultiAnglePhotos() {
         if (res.ok && data.success) {
             latestMultiAngleResults = data;
             renderConsolidatedSummary(data);
-            showToast(`Multi-angle analysis completed! Processed ${selectedKeys.length} angles.`, "success");
-        } else {
-            selectedKeys.forEach(angle => {
+            activeAngles.forEach(angle => {
                 const lower = angle.toLowerCase();
                 const badge = document.getElementById(`status-badge-${lower}`);
-                if (badge && badge.textContent === "Processing...") {
+                if (badge) {
+                    badge.textContent = "Processed";
+                    badge.className = "badge-status badge-present";
+                }
+            });
+            showToast(`Multi-angle analysis completed! Processed ${data.total_files_received || totalFilesCount} file(s) across angles.`, "success");
+        } else {
+            activeAngles.forEach(angle => {
+                const lower = angle.toLowerCase();
+                const badge = document.getElementById(`status-badge-${lower}`);
+                if (badge && badge.textContent.startsWith("Processing")) {
                     badge.textContent = "Failed";
                     badge.className = "badge-status badge-needs-review";
                 }
@@ -745,15 +807,15 @@ async function submitMultiAnglePhotos() {
     } catch (err) {
         submitBtn.disabled = false;
         submitBtn.innerHTML = `<i class="bi bi-cloud-arrow-up-fill"></i> Upload & Process Bus Angles`;
-        selectedKeys.forEach(angle => {
+        activeAngles.forEach(angle => {
             const lower = angle.toLowerCase();
             const badge = document.getElementById(`status-badge-${lower}`);
-            if (badge && badge.textContent === "Processing...") {
+            if (badge && badge.textContent.startsWith("Processing")) {
                 badge.textContent = "Ready";
                 badge.className = "badge-status badge-present";
             }
         });
-        showToast("Network error uploading multi-angle photos.", "error");
+        showToast("Network error uploading multi-angle media.", "error");
         console.error(err);
     }
 }
@@ -1748,13 +1810,67 @@ let activeStopNavIndex = 0;
 // Browser Folder Attachment State
 const browserAttachedFolders = { A: null, B: null, C: null };
 
+// Modern Native Directory Reader for Chrome/Edge
+async function getFilesFromDirectoryHandle(dirHandle, subPath = "") {
+    const files = [];
+    for await (const entry of dirHandle.values()) {
+        const relPath = subPath ? `${subPath}/${entry.name}` : entry.name;
+        if (entry.kind === "file") {
+            try {
+                const file = await entry.getFile();
+                // Attach webkitRelativePath property for directory path tracking
+                Object.defineProperty(file, "webkitRelativePath", {
+                    value: `${dirHandle.name}/${relPath}`,
+                    writable: true,
+                    configurable: true
+                });
+                files.push(file);
+            } catch (e) {
+                console.warn(`Could not read file ${entry.name}:`, e);
+            }
+        } else if (entry.kind === "directory") {
+            try {
+                const subFiles = await getFilesFromDirectoryHandle(entry, relPath);
+                files.push(...subFiles);
+            } catch (e) {
+                console.warn(`Could not read directory ${entry.name}:`, e);
+            }
+        }
+    }
+    return files;
+}
+
 // Browser & Native Folder Selection
-function selectFolderDialog(angle) {
+async function selectFolderDialog(angle) {
     const lower = angle.toLowerCase();
     const folderInput = document.getElementById(`folder-input-${lower}`);
     const errBox = document.getElementById(`folder-error-${lower}`);
     if (errBox) errBox.style.display = "none";
 
+    // 1. Modern Chrome/Edge: Native File System Access API
+    if (window.showDirectoryPicker) {
+        try {
+            const dirHandle = await window.showDirectoryPicker({ mode: "read" });
+            if (dirHandle) {
+                const files = await getFilesFromDirectoryHandle(dirHandle);
+                if (files && files.length > 0) {
+                    await handleBrowserFolderSelected(angle, files, dirHandle.name);
+                    return;
+                } else {
+                    showToast(`The folder "${dirHandle.name}" has no supported files.`, "warning");
+                    return;
+                }
+            }
+        } catch (err) {
+            if (err.name === "AbortError") {
+                // User cancelled the directory picker dialog
+                return;
+            }
+            console.warn("showDirectoryPicker error or blocked, falling back to input:", err);
+        }
+    }
+
+    // 2. Fallback: Legacy / standard HTML input with webkitdirectory
     if (folderInput) {
         folderInput.value = "";
         folderInput.click();
@@ -1802,6 +1918,7 @@ async function handleBrowserFolderSelected(angle, fileList, customFolderName = n
         return;
     }
 
+    const totalSupported = clips.length + images.length;
     browserAttachedFolders[angle] = {
         folderName: folderName,
         clips: clips,
@@ -1809,6 +1926,7 @@ async function handleBrowserFolderSelected(angle, fileList, customFolderName = n
         allFiles: [...clips, ...images],
         synced: false
     };
+    individualAngleFiles[angle] = []; // Reset individual queue when folder is attached
 
     // Calculate total size
     const totalBytes = [...clips, ...images].reduce((sum, f) => sum + (f.size || 0), 0);
@@ -1819,6 +1937,7 @@ async function handleBrowserFolderSelected(angle, fileList, customFolderName = n
     const pathDisplay = document.getElementById(`folder-path-display-${lower}`);
     const clipsCountEl = document.getElementById(`folder-clips-count-${lower}`);
     const imagesCountEl = document.getElementById(`folder-images-count-${lower}`);
+    const totalCountEl = document.getElementById(`folder-total-count-${lower}`);
     const errBox = document.getElementById(`folder-error-${lower}`);
 
     if (errBox) errBox.style.display = "none";
@@ -1829,10 +1948,11 @@ async function handleBrowserFolderSelected(angle, fileList, customFolderName = n
         statusBadge.style.color = "#15803d";
     }
     if (pathDisplay) {
-        pathDisplay.innerHTML = `Folder: <strong style="color:var(--accent-primary);"><i class="bi bi-folder-check"></i> ${folderName}</strong> <span class="badge-status badge-present" style="font-size:10px;padding:2px 6px;">Browser Attached</span>`;
+        pathDisplay.innerHTML = `Folder: <strong style="color:var(--accent-primary);"><i class="bi bi-folder-check"></i> ${folderName}</strong> <span class="badge-status badge-present" style="font-size:10px;padding:2px 6px;">Attached (${totalSupported} files)</span>`;
     }
     if (clipsCountEl) clipsCountEl.textContent = clips.length;
     if (imagesCountEl) imagesCountEl.textContent = images.length;
+    if (totalCountEl) totalCountEl.textContent = totalSupported;
 
     // Show and populate clip picker if clips available
     const clipPickerWrap = document.getElementById(`folder-clip-picker-wrap-${lower}`);
@@ -1856,6 +1976,9 @@ async function handleBrowserFolderSelected(angle, fileList, customFolderName = n
     await handleAngleFileSelected(angle, primaryFile, true);
 
     showToast(`Attached full folder "${folderName}" (${clips.length} clips, ${images.length} images) to Angle ${angle}!`, "success");
+
+    // Auto-sync folder to server in background so clips are immediately ready for timetable matching
+    rescanFolder(angle).catch(err => console.warn(`Background sync warning for Angle ${angle}:`, err));
 }
 
 function switchFolderActiveClip(angle, clipIndex) {
@@ -1895,14 +2018,17 @@ async function scanFolder(angle, folderPath) {
 
         const data = await res.json();
         if (res.ok && data.success) {
+            const tot = data.total_supported || (data.clips_count + data.images_count);
             if (pathDisplay) pathDisplay.innerHTML = `Path: <strong>${data.folder.folder_path}</strong>`;
             if (clipsCountEl) clipsCountEl.textContent = data.clips_count;
             if (imagesCountEl) imagesCountEl.textContent = data.images_count;
+            const totalCountEl = document.getElementById(`folder-total-count-${lower}`);
+            if (totalCountEl) totalCountEl.textContent = tot;
             if (statusBadge) {
-                statusBadge.textContent = `${data.clips_count} Clips, ${data.images_count} Imgs`;
+                statusBadge.textContent = `${data.clips_count} Clips, ${data.images_count} Imgs (${tot} Total)`;
                 statusBadge.className = "badge-status badge-present";
             }
-            showToast(`Scanned Angle ${angle} folder: found ${data.clips_count} clips and ${data.images_count} images.`, "success");
+            showToast(`Scanned Angle ${angle} folder: found ${data.clips_count} clips and ${data.images_count} images (${tot} supported files).`, "success");
         } else {
             if (statusBadge) {
                 statusBadge.textContent = "Error";
@@ -1927,10 +2053,13 @@ async function scanFolder(angle, folderPath) {
 async function rescanFolder(angle) {
     const lower = angle.toLowerCase();
     const folderData = browserAttachedFolders[angle];
+    const indFiles = individualAngleFiles[angle];
+    const filesToSync = (folderData && folderData.allFiles && folderData.allFiles.length > 0) ? folderData.allFiles : (indFiles && indFiles.length > 0 ? indFiles : null);
     const errBox = document.getElementById(`folder-error-${lower}`);
     const statusBadge = document.getElementById(`folder-status-${lower}`);
+    const totalCountEl = document.getElementById(`folder-total-count-${lower}`);
 
-    if (folderData && folderData.allFiles && folderData.allFiles.length > 0) {
+    if (filesToSync && filesToSync.length > 0) {
         // Sync browser folder files to server for automated timetable processing
         if (statusBadge) {
             statusBadge.textContent = "Syncing...";
@@ -1939,14 +2068,16 @@ async function rescanFolder(angle) {
         try {
             const formData = new FormData();
             formData.append("camera_angle", angle);
-            formData.append("folder_name", folderData.folderName);
+            formData.append("folder_name", (folderData ? folderData.folderName : `Media_Angle_${angle}`));
             const journeySelect = document.getElementById("journey-select");
             const journeyId = journeySelect ? journeySelect.value : null;
             if (journeyId && journeyId !== "auto_create") formData.append("journey_id", journeyId);
             if (currentTimetableId) formData.append("timetable_id", currentTimetableId);
 
-            folderData.allFiles.forEach(f => {
+            filesToSync.forEach((f, idx) => {
                 formData.append("files", f);
+                const rPath = f.webkitRelativePath || f.name;
+                formData.append(`rel_path_${idx}`, rPath);
             });
 
             const res = await fetch("/api/automated/upload-browser-folder", {
@@ -1956,16 +2087,29 @@ async function rescanFolder(angle) {
 
             const data = await res.json();
             if (res.ok && data.success) {
-                folderData.synced = true;
+                if (folderData) folderData.synced = true;
                 selectedFolderPaths[angle] = data.folder.folder_path;
+                const tot = data.total_supported || (data.clips_count + data.images_count);
                 if (statusBadge) {
-                    statusBadge.textContent = `${data.clips_count} Clips (Synced)`;
+                    statusBadge.textContent = `Synced (${tot} files)`;
                     statusBadge.className = "badge-status badge-present";
+                    statusBadge.style.background = "#dcfce7";
+                    statusBadge.style.color = "#15803d";
                 }
-                showToast(`Folder "${folderData.folderName}" successfully synced to server (${data.clips_count} clips ready for stop matching).`, "success");
+                const pathDisplay = document.getElementById(`folder-path-display-${lower}`);
+                if (pathDisplay) {
+                    pathDisplay.innerHTML = `Folder: <strong style="color:var(--accent-primary);"><i class="bi bi-folder-check"></i> ${data.folder.folder_name}</strong> <span class="badge-status badge-present" style="font-size:10px;padding:2px 6px;">Server Synced</span>`;
+                }
+                const clipsEl = document.getElementById(`folder-clips-count-${lower}`);
+                const imagesEl = document.getElementById(`folder-images-count-${lower}`);
+                if (clipsEl) clipsEl.textContent = data.clips_count;
+                if (imagesEl) imagesEl.textContent = data.images_count;
+                if (totalCountEl) totalCountEl.textContent = tot;
+
+                showToast(`Angle ${angle} files successfully synced to server (${tot} files ready for stop matching).`, "success");
             } else {
                 if (statusBadge) {
-                    statusBadge.textContent = `${folderData.clips.length} Clips (Local)`;
+                    statusBadge.textContent = `${filesToSync.length} Files (Local)`;
                     statusBadge.className = "badge-status badge-present";
                 }
                 if (errBox) {
@@ -1976,7 +2120,7 @@ async function rescanFolder(angle) {
         } catch (e) {
             console.error("Folder sync error:", e);
             if (statusBadge) {
-                statusBadge.textContent = `${folderData.clips.length} Clips (Local)`;
+                statusBadge.textContent = `${filesToSync.length} Files (Local)`;
                 statusBadge.className = "badge-status badge-present";
             }
         }
@@ -1990,16 +2134,22 @@ async function rescanFolder(angle) {
 function clearFolderSelection(angle) {
     selectedFolderPaths[angle] = null;
     browserAttachedFolders[angle] = null;
+    individualAngleFiles[angle] = [];
+    selectedAngleFiles[angle] = null;
+
     const lower = angle.toLowerCase();
     const statusBadge = document.getElementById(`folder-status-${lower}`);
     const pathDisplay = document.getElementById(`folder-path-display-${lower}`);
     const clipsCountEl = document.getElementById(`folder-clips-count-${lower}`);
     const imagesCountEl = document.getElementById(`folder-images-count-${lower}`);
+    const totalCountEl = document.getElementById(`folder-total-count-${lower}`);
     const errBox = document.getElementById(`folder-error-${lower}`);
     const clipPickerWrap = document.getElementById(`folder-clip-picker-wrap-${lower}`);
     const folderInput = document.getElementById(`folder-input-${lower}`);
+    const fileInput = document.getElementById(`file-input-${lower}`);
 
     if (folderInput) folderInput.value = "";
+    if (fileInput) fileInput.value = "";
     if (clipPickerWrap) clipPickerWrap.style.display = "none";
     if (statusBadge) {
         statusBadge.textContent = "No Folder";
@@ -2007,10 +2157,14 @@ function clearFolderSelection(angle) {
         statusBadge.style.background = "#f1f5f9";
         statusBadge.style.color = "#64748b";
     }
-    if (pathDisplay) pathDisplay.innerHTML = `Path: <span style="font-style:italic;">None selected</span>`;
+    if (pathDisplay) pathDisplay.innerHTML = 'Path: <span style="font-style:italic;">None selected</span>';
     if (clipsCountEl) clipsCountEl.textContent = "0";
     if (imagesCountEl) imagesCountEl.textContent = "0";
+    if (totalCountEl) totalCountEl.textContent = "0";
     if (errBox) errBox.style.display = "none";
+
+    // Reset preview
+    removeAnglePhoto(angle);
     showToast(`Cleared Angle ${angle} folder selection.`, "info");
 }
 
@@ -2261,9 +2415,11 @@ async function uploadAndParseTimetable() {
             renderStopsTable(currentStopsList);
             showToast(`Timetable validated! Loaded ${data.total_stops} stops.`, "success");
 
-            // Auto-trigger clip matching if source folders are selected
-            const hasFolders = Object.values(selectedFolderPaths).some(p => p !== null);
-            if (hasFolders) {
+            // Auto-trigger clip matching if source folders or browser attached folders are present
+            const hasServerFolders = Object.values(selectedFolderPaths).some(p => p !== null);
+            const hasBrowserFolders = Object.values(browserAttachedFolders).some(f => f && f.allFiles && f.allFiles.length > 0);
+            const hasIndFiles = Object.values(individualAngleFiles).some(arr => arr && arr.length > 0);
+            if (hasServerFolders || hasBrowserFolders || hasIndFiles) {
                 triggerAutoMatchClips();
             }
         } else {
@@ -2289,8 +2445,30 @@ async function triggerAutoMatchClips() {
     }
 
     const matchBtn = document.getElementById("btn-match-clips");
-    matchBtn.disabled = true;
-    matchBtn.innerHTML = `<i class="bi bi-hourglass-split"></i> Matching Clips Across Angles...`;
+    if (matchBtn) {
+        matchBtn.disabled = true;
+        matchBtn.innerHTML = `<i class="bi bi-hourglass-split"></i> Matching Clips Across Angles...`;
+    }
+
+    // Ensure any browser-attached folders or individual media files are synced to server before matching
+    for (const angle of ["A", "B", "C"]) {
+        const folderData = browserAttachedFolders[angle];
+        const indFiles = individualAngleFiles[angle];
+        const needsSync = (folderData && folderData.allFiles && folderData.allFiles.length > 0 && !folderData.synced) ||
+                          (indFiles && indFiles.length > 0 && !selectedFolderPaths[angle]);
+        if (needsSync) {
+            try {
+                if (matchBtn) matchBtn.innerHTML = `<i class="bi bi-cloud-arrow-up"></i> Syncing Angle ${angle} Files...`;
+                await rescanFolder(angle);
+            } catch (syncErr) {
+                console.warn(`Sync warning for Angle ${angle}:`, syncErr);
+            }
+        }
+    }
+
+    if (matchBtn) {
+        matchBtn.innerHTML = `<i class="bi bi-hourglass-split"></i> Matching Clips Across Angles...`;
+    }
 
     try {
         const res = await fetch("/api/automated/match-clips", {
@@ -2300,8 +2478,10 @@ async function triggerAutoMatchClips() {
         });
 
         const data = await res.json();
-        matchBtn.disabled = false;
-        matchBtn.innerHTML = `<i class="bi bi-magic"></i> Auto-Match Stop Clips`;
+        if (matchBtn) {
+            matchBtn.disabled = false;
+            matchBtn.innerHTML = `<i class="bi bi-magic"></i> Auto-Match Stop Clips`;
+        }
 
         if (res.ok && data.success) {
             currentStopsList = data.stops || [];
@@ -2311,8 +2491,10 @@ async function triggerAutoMatchClips() {
             showToast(data.error || "Clip matching failed.", "error");
         }
     } catch (err) {
-        matchBtn.disabled = false;
-        matchBtn.innerHTML = `<i class="bi bi-magic"></i> Auto-Match Stop Clips`;
+        if (matchBtn) {
+            matchBtn.disabled = false;
+            matchBtn.innerHTML = `<i class="bi bi-magic"></i> Auto-Match Stop Clips`;
+        }
         showToast("Network error matching clips.", "error");
     }
 }
@@ -2370,7 +2552,10 @@ function renderStopsTable(stops) {
         const getAngleBadge = (m) => {
             if (!m || m.status === "missing") return `<span class="badge-status" style="background:#f1f5f9;color:#94a3b8;font-size:10px;">Missing</span>`;
             if (m.status === "skipped_black_and_white") return `<span class="badge-status" style="background:#475569;color:#fff;font-size:10px;" title="${m.skip_reason || 'Black-and-white / grayscale footage skipped'}"><i class="bi bi-moon-stars"></i> B&W Skip</span>`;
-            if (m.status === "processed") return `<span class="badge-status badge-present" style="font-size:10px;" title="${m.source_filename || ''}">${m.detection_count || 0} pax</span>`;
+            
+            const reuseTag = (m.reuse_count && m.reuse_count > 1) ? ` <span title="Reused across ${m.reuse_count} stops" style="font-size:9px;background:#e0f2fe;color:#0369a1;padding:1px 4px;border-radius:2px;font-weight:700;"><i class="bi bi-arrow-repeat"></i>x${m.reuse_count}</span>` : '';
+
+            if (m.status === "processed") return `<span class="badge-status badge-present" style="font-size:10px;" title="${m.source_filename || ''}">${m.detection_count || 0} pax${reuseTag}</span>`;
 
             // Display capture time or clean filename tail rather than truncated prefix
             let label = m.source_filename || 'Matched';
@@ -2385,7 +2570,7 @@ function renderStopsTable(stops) {
                     label = label.substring(label.length - 12);
                 }
             }
-            return `<span class="badge-status" style="background:#e0e7ff;color:#4338ca;font-size:10px;font-weight:600;" title="${m.source_filename || ''}">${label}</span>`;
+            return `<span class="badge-status" style="background:#e0e7ff;color:#4338ca;font-size:10px;font-weight:600;" title="${m.source_filename || ''}">${label}${reuseTag}</span>`;
         };
 
         let covClass = "badge-status";
@@ -2511,6 +2696,15 @@ async function startAutomatedJob() {
     const startBtn = document.getElementById("btn-start-job");
     startBtn.disabled = true;
 
+    // Ensure all attached local browser folders/files are synced to server before starting
+    for (const angle of ["A", "B", "C"]) {
+        const folderData = browserAttachedFolders[angle];
+        const indFiles = individualAngleFiles[angle];
+        if ((folderData && !folderData.synced && folderData.allFiles && folderData.allFiles.length > 0) || (indFiles && indFiles.length > 0)) {
+            await rescanFolder(angle);
+        }
+    }
+
     try {
         const res = await fetch("/api/automated/jobs/start", {
             method: "POST",
@@ -2538,10 +2732,13 @@ async function startAutomatedJob() {
     }
 }
 
+let jobPollTick = 0;
 function startJobPolling() {
     if (jobPollInterval) clearInterval(jobPollInterval);
+    jobPollTick = 0;
     jobPollInterval = setInterval(async () => {
         if (!currentJobId) return;
+        jobPollTick++;
         try {
             const res = await fetch(`/api/automated/jobs/${currentJobId}/status`);
             if (res.ok) {
@@ -2553,6 +2750,9 @@ function startJobPolling() {
                         updateJobUIControls(data.job.status);
                         // Refresh timetable stops
                         refreshTimetableStops();
+                    } else if (jobPollTick % 2 === 0) {
+                        // Refresh timetable stops periodically during processing
+                        refreshTimetableStops();
                     }
                 }
             }
@@ -2563,26 +2763,93 @@ function startJobPolling() {
 }
 
 function renderJobProgress(job) {
-    document.getElementById("stat-job-total").textContent = job.total_stops;
-    document.getElementById("stat-job-processed").textContent = job.processed_stops;
-    document.getElementById("stat-job-remaining").textContent = job.remaining_stops;
-    document.getElementById("stat-job-fully").textContent = job.fully_covered_stops;
-    document.getElementById("stat-job-partially").textContent = job.partially_covered_stops;
-    document.getElementById("stat-job-not").textContent = job.not_covered_stops;
-    document.getElementById("stat-job-failed").textContent = job.failed_stops;
+    if (!job) return;
+    const setTxt = (id, val) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = val !== null && val !== undefined ? val : "-";
+    };
 
+    setTxt("stat-job-total", job.total_stops);
+    setTxt("stat-job-processed", job.processed_stops);
+    setTxt("stat-job-remaining", job.remaining_stops);
+    setTxt("stat-job-fully", job.fully_covered_stops);
+    setTxt("stat-job-partially", job.partially_covered_stops);
+    setTxt("stat-job-not", job.not_covered_stops);
+    setTxt("stat-job-failed", job.failed_stops);
+
+    // Media file counters
+    setTxt("stat-job-total-media", job.total_media_files || 0);
+    setTxt("stat-job-processed-media", job.processed_media_files || 0);
+    const remMedia = job.remaining_media_files !== undefined ? job.remaining_media_files : Math.max(0, (job.total_media_files || 0) - (job.processed_media_files || 0));
+    setTxt("stat-job-remaining-media", remMedia);
+
+    // Live Execution Status Bar
+    const stopNameEl = document.getElementById("job-current-stop-name");
+    if (stopNameEl) {
+        if (job.status === "completed") {
+            stopNameEl.innerHTML = `<span style="color:#10b981;font-weight:600;"><i class="bi bi-check-circle-fill"></i> All Stops Processed</span>`;
+        } else if (job.current_stop_name) {
+            stopNameEl.textContent = `#${job.current_stop_number || ''} ${job.current_stop_name}`;
+        } else {
+            stopNameEl.textContent = job.status === "running" ? "Initializing..." : "Ready";
+        }
+    }
+
+    const angleEl = document.getElementById("job-current-angle");
+    if (angleEl) {
+        angleEl.textContent = job.current_angle ? `Angle ${job.current_angle}` : "-";
+    }
+
+    const fileEl = document.getElementById("job-current-filename");
+    if (fileEl) {
+        fileEl.textContent = job.current_media_filename || "-";
+    }
+
+    const aiStatusEl = document.getElementById("job-ai-status");
+    if (aiStatusEl) {
+        aiStatusEl.textContent = job.ai_detection_status || (job.status === "running" ? "Active Detection" : (job.status === "completed" ? "Completed" : "Idle"));
+        if (job.status === "completed") {
+            aiStatusEl.className = "badge-status badge-present";
+            aiStatusEl.style.background = "#dcfce7";
+            aiStatusEl.style.color = "#15803d";
+        } else if (job.status === "running") {
+            aiStatusEl.className = "badge-status badge-possibly-absent";
+            aiStatusEl.style.background = "#dbeafe";
+            aiStatusEl.style.color = "#1d4ed8";
+        }
+    }
+
+    // Overall Progress Bar
     const bar = document.getElementById("job-progress-bar");
     const pct = document.getElementById("job-progress-percentage");
     const label = document.getElementById("job-current-step-label");
     const badge = document.getElementById("job-status-badge");
 
-    if (bar) bar.style.width = `${job.progress_percent}%`;
-    if (pct) pct.textContent = `${Math.round(job.progress_percent)}%`;
-    if (label) label.textContent = `Current: Stop #${job.current_stop_number || '-'} ${job.current_stop_name || ''} (Angle ${job.current_angle || 'Sync'})`;
+    const pctVal = Math.round(job.progress_percent || 0);
+    if (bar) bar.style.width = `${pctVal}%`;
+    if (pct) pct.textContent = `${pctVal}%`;
+    if (label) {
+        label.textContent = job.status === "completed" 
+            ? "Overall Stop-Wise Progress: 100% Completed" 
+            : `Current: Stop #${job.current_stop_number || '-'} ${job.current_stop_name || ''} (Angle ${job.current_angle || 'Sync'})`;
+    }
     if (badge) {
         badge.textContent = job.status.toUpperCase();
         badge.className = job.status === "completed" ? "badge-status badge-present" : (job.status === "running" ? "badge-status badge-possibly-absent" : "badge-status");
     }
+
+    // 3 Independent Angle Progress Indicators
+    const setAngleProg = (ang, pctNum) => {
+        const rounded = Math.round(pctNum || 0);
+        const pBar = document.getElementById(`angle-progress-bar-${ang}`);
+        const pPct = document.getElementById(`angle-progress-pct-${ang}`);
+        if (pBar) pBar.style.width = `${rounded}%`;
+        if (pPct) pPct.textContent = `${rounded}%`;
+    };
+
+    setAngleProg("a", job.angle_a_progress);
+    setAngleProg("b", job.angle_b_progress);
+    setAngleProg("c", job.angle_c_progress);
 }
 
 function updateJobUIControls(status) {
@@ -2725,5 +2992,50 @@ async function deleteTemporaryData() {
         showToast("Network error deleting temporary data.", "error");
     }
 }
+
+async function publishAutomatedReportsToLiveServer() {
+    const journeySelect = document.getElementById("journey-select");
+    const journeyId = (journeySelect && journeySelect.value && journeySelect.value !== "auto_create") ? parseInt(journeySelect.value) : null;
+    const btn = document.getElementById("btn-publish-automated-cloud");
+    const origHtml = btn ? btn.innerHTML : "";
+
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<i class="bi bi-arrow-repeat spin"></i> Publishing to Cloud...`;
+    }
+
+    try {
+        const url = journeyId ? `/api/sync/publish/${journeyId}` : "/api/sync/publish-latest";
+        showToast("Exporting journey reports, uploading thumbnails, and syncing with live server...", "info");
+
+        const res = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ upload_remote_crops: true })
+        });
+        const data = await res.json();
+
+        if (res.ok && data.success) {
+            showToast(data.message || "Reports published successfully to live server & GitHub!", "success");
+            alert(`✅ PUBLISHED TO LIVE SERVER!\n\n` +
+                  `Journey: ${data.export_details?.journey_code || journeyId || 'Latest'}\n` +
+                  `Passengers: ${data.export_details?.total_passengers || 0}\n` +
+                  `Stops: ${data.export_details?.total_stops || 0}\n` +
+                  `Remote Thumbnails Uploaded: ${data.export_details?.remote_images_uploaded || 0}\n` +
+                  `GitHub Status: ${data.sync_details?.method || 'Synced'}\n\n` +
+                  `Live server dashboard will now display these reports without running heavy AI.`);
+        } else {
+            showToast(data.error || "Failed to publish reports.", "error");
+        }
+    } catch (e) {
+        showToast("Publishing error: " + e.message, "error");
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = origHtml;
+        }
+    }
+}
+
 
 

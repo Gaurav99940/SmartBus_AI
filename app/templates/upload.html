@@ -122,19 +122,20 @@
                 <div style="display:flex;align-items:center;justify-content:space-between;font-size:11px;margin-bottom:8px;">
                     <span>Clips: <strong id="folder-clips-count-a">0</strong></span>
                     <span>Images: <strong id="folder-images-count-a">0</strong></span>
+                    <span>Total Supported: <strong id="folder-total-count-a" style="color:var(--accent-primary);">0</strong></span>
                 </div>
                 <div style="display:flex;gap:6px;flex-wrap:wrap;">
                     <button type="button" class="btn-primary" style="padding:4px 8px;font-size:11px;" onclick="selectFolderDialog('A')">
                         <i class="bi bi-folder2-open"></i> Select Folder
                     </button>
-                    <button type="button" class="btn-secondary" style="padding:4px 8px;font-size:11px;" onclick="document.getElementById('file-input-a').click();">
-                        <i class="bi bi-file-earmark-play"></i> Select Clips
+                    <button type="button" class="btn-secondary" style="padding:4px 8px;font-size:11px;" onclick="document.getElementById('file-input-a').click();" title="Select single or multiple photos/videos">
+                        <i class="bi bi-file-earmark-play"></i> Browse Clip
                     </button>
                     <button type="button" class="btn-secondary" style="padding:4px 8px;font-size:11px;" onclick="rescanFolder('A')">
                         <i class="bi bi-arrow-repeat"></i> Scan / Sync
                     </button>
                     <button type="button" class="btn-secondary" style="padding:4px 8px;font-size:11px;" onclick="clearFolderSelection('A')">
-                        <i class="bi bi-x-circle"></i> Clear
+                        <i class="bi bi-x-circle"></i> Clear Folder
                     </button>
                 </div>
                 <div id="folder-clip-picker-wrap-a" style="display:none;margin-top:8px;padding-top:6px;border-top:1px dashed var(--border-color);">
@@ -147,7 +148,7 @@
             <!-- Angle A Dropzone -->
             <div id="dropzone-a" class="upload-dropzone" style="flex:1;min-height:220px;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:24px 14px;">
                 <input type="file" id="file-input-a" accept="image/jpeg,image/png,image/webp,video/mp4,video/avi,video/quicktime,video/x-matroska,video/*" multiple style="display:none;" onchange="handleAngleFileInputChange('A', this.files)">
-                <input type="file" id="folder-input-a" webkitdirectory mozdirectory directory multiple style="display:none;" onchange="handleBrowserFolderSelected('A', this.files)">
+                <input type="file" id="folder-input-a" webkitdirectory mozdirectory directory multiple style="display:none;">
                 <div id="prompt-a" style="pointer-events:none;">
                     <i class="bi bi-cloud-arrow-up-fill dropzone-icon" style="font-size:32px;"></i>
                     <h5 style="font-size:14px;font-weight:600;margin-bottom:4px;">Angle A (Front Section)</h5>
@@ -215,19 +216,20 @@
                 <div style="display:flex;align-items:center;justify-content:space-between;font-size:11px;margin-bottom:8px;">
                     <span>Clips: <strong id="folder-clips-count-b">0</strong></span>
                     <span>Images: <strong id="folder-images-count-b">0</strong></span>
+                    <span>Total Supported: <strong id="folder-total-count-b" style="color:var(--accent-primary);">0</strong></span>
                 </div>
                 <div style="display:flex;gap:6px;flex-wrap:wrap;">
                     <button type="button" class="btn-primary" style="padding:4px 8px;font-size:11px;" onclick="selectFolderDialog('B')">
                         <i class="bi bi-folder2-open"></i> Select Folder
                     </button>
-                    <button type="button" class="btn-secondary" style="padding:4px 8px;font-size:11px;" onclick="document.getElementById('file-input-b').click();">
-                        <i class="bi bi-file-earmark-play"></i> Select Clips
+                    <button type="button" class="btn-secondary" style="padding:4px 8px;font-size:11px;" onclick="document.getElementById('file-input-b').click();" title="Select single or multiple photos/videos">
+                        <i class="bi bi-file-earmark-play"></i> Browse Clip
                     </button>
                     <button type="button" class="btn-secondary" style="padding:4px 8px;font-size:11px;" onclick="rescanFolder('B')">
                         <i class="bi bi-arrow-repeat"></i> Scan / Sync
                     </button>
                     <button type="button" class="btn-secondary" style="padding:4px 8px;font-size:11px;" onclick="clearFolderSelection('B')">
-                        <i class="bi bi-x-circle"></i> Clear
+                        <i class="bi bi-x-circle"></i> Clear Folder
                     </button>
                 </div>
                 <div id="folder-clip-picker-wrap-b" style="display:none;margin-top:8px;padding-top:6px;border-top:1px dashed var(--border-color);">
@@ -240,7 +242,7 @@
             <!-- Angle B Dropzone -->
             <div id="dropzone-b" class="upload-dropzone" style="flex:1;min-height:220px;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:24px 14px;">
                 <input type="file" id="file-input-b" accept="image/jpeg,image/png,image/webp,video/mp4,video/avi,video/quicktime,video/x-matroska,video/*" multiple style="display:none;" onchange="handleAngleFileInputChange('B', this.files)">
-                <input type="file" id="folder-input-b" webkitdirectory mozdirectory directory multiple style="display:none;" onchange="handleBrowserFolderSelected('B', this.files)">
+                <input type="file" id="folder-input-b" webkitdirectory mozdirectory directory multiple style="display:none;">
                 <div id="prompt-b" style="pointer-events:none;">
                     <i class="bi bi-cloud-arrow-up-fill dropzone-icon" style="font-size:32px;"></i>
                     <h5 style="font-size:14px;font-weight:600;margin-bottom:4px;">Angle B (Middle Section)</h5>
@@ -308,19 +310,20 @@
                 <div style="display:flex;align-items:center;justify-content:space-between;font-size:11px;margin-bottom:8px;">
                     <span>Clips: <strong id="folder-clips-count-c">0</strong></span>
                     <span>Images: <strong id="folder-images-count-c">0</strong></span>
+                    <span>Total Supported: <strong id="folder-total-count-c" style="color:var(--accent-primary);">0</strong></span>
                 </div>
                 <div style="display:flex;gap:6px;flex-wrap:wrap;">
                     <button type="button" class="btn-primary" style="padding:4px 8px;font-size:11px;" onclick="selectFolderDialog('C')">
                         <i class="bi bi-folder2-open"></i> Select Folder
                     </button>
-                    <button type="button" class="btn-secondary" style="padding:4px 8px;font-size:11px;" onclick="document.getElementById('file-input-c').click();">
-                        <i class="bi bi-file-earmark-play"></i> Select Clips
+                    <button type="button" class="btn-secondary" style="padding:4px 8px;font-size:11px;" onclick="document.getElementById('file-input-c').click();" title="Select single or multiple photos/videos">
+                        <i class="bi bi-file-earmark-play"></i> Browse Clip
                     </button>
                     <button type="button" class="btn-secondary" style="padding:4px 8px;font-size:11px;" onclick="rescanFolder('C')">
                         <i class="bi bi-arrow-repeat"></i> Scan / Sync
                     </button>
                     <button type="button" class="btn-secondary" style="padding:4px 8px;font-size:11px;" onclick="clearFolderSelection('C')">
-                        <i class="bi bi-x-circle"></i> Clear
+                        <i class="bi bi-x-circle"></i> Clear Folder
                     </button>
                 </div>
                 <div id="folder-clip-picker-wrap-c" style="display:none;margin-top:8px;padding-top:6px;border-top:1px dashed var(--border-color);">
@@ -333,7 +336,7 @@
             <!-- Angle C Dropzone -->
             <div id="dropzone-c" class="upload-dropzone" style="flex:1;min-height:220px;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:24px 14px;">
                 <input type="file" id="file-input-c" accept="image/jpeg,image/png,image/webp,video/mp4,video/avi,video/quicktime,video/x-matroska,video/*" multiple style="display:none;" onchange="handleAngleFileInputChange('C', this.files)">
-                <input type="file" id="folder-input-c" webkitdirectory mozdirectory directory multiple style="display:none;" onchange="handleBrowserFolderSelected('C', this.files)">
+                <input type="file" id="folder-input-c" webkitdirectory mozdirectory directory multiple style="display:none;">
                 <div id="prompt-c" style="pointer-events:none;">
                     <i class="bi bi-cloud-arrow-up-fill dropzone-icon" style="font-size:32px;"></i>
                     <h5 style="font-size:14px;font-weight:600;margin-bottom:4px;">Angle C (Rear Section)</h5>
@@ -467,45 +470,100 @@
     </div>
 
     <!-- Progress & Real-time Stats -->
-    <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(130px, 1fr));gap:10px;margin-bottom:16px;">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(110px, 1fr));gap:10px;margin-bottom:14px;">
         <div class="stat-card" style="padding:10px;background:var(--bg-app);border-radius:var(--radius-sm);text-align:center;">
             <div style="font-size:11px;color:var(--text-muted);">Total Stops</div>
-            <div style="font-size:20px;font-weight:700;color:var(--text-main);" id="stat-job-total">0</div>
+            <div style="font-size:18px;font-weight:700;color:var(--text-main);" id="stat-job-total">0</div>
         </div>
         <div class="stat-card" style="padding:10px;background:var(--bg-app);border-radius:var(--radius-sm);text-align:center;">
-            <div style="font-size:11px;color:var(--text-muted);">Processed</div>
-            <div style="font-size:20px;font-weight:700;color:#10b981;" id="stat-job-processed">0</div>
+            <div style="font-size:11px;color:var(--text-muted);">Processed Stops</div>
+            <div style="font-size:18px;font-weight:700;color:#10b981;" id="stat-job-processed">0</div>
         </div>
         <div class="stat-card" style="padding:10px;background:var(--bg-app);border-radius:var(--radius-sm);text-align:center;">
-            <div style="font-size:11px;color:var(--text-muted);">Remaining</div>
-            <div style="font-size:20px;font-weight:700;color:var(--text-muted);" id="stat-job-remaining">0</div>
+            <div style="font-size:11px;color:var(--text-muted);">Remaining Stops</div>
+            <div style="font-size:18px;font-weight:700;color:var(--text-muted);" id="stat-job-remaining">0</div>
         </div>
         <div class="stat-card" style="padding:10px;background:var(--bg-app);border-radius:var(--radius-sm);text-align:center;">
             <div style="font-size:11px;color:var(--text-muted);">Fully Covered</div>
-            <div style="font-size:20px;font-weight:700;color:#10b981;" id="stat-job-fully">0</div>
+            <div style="font-size:18px;font-weight:700;color:#10b981;" id="stat-job-fully">0</div>
         </div>
         <div class="stat-card" style="padding:10px;background:var(--bg-app);border-radius:var(--radius-sm);text-align:center;">
             <div style="font-size:11px;color:var(--text-muted);">Partially Covered</div>
-            <div style="font-size:20px;font-weight:700;color:#f59e0b;" id="stat-job-partially">0</div>
+            <div style="font-size:18px;font-weight:700;color:#f59e0b;" id="stat-job-partially">0</div>
         </div>
         <div class="stat-card" style="padding:10px;background:var(--bg-app);border-radius:var(--radius-sm);text-align:center;">
             <div style="font-size:11px;color:var(--text-muted);">Not Covered</div>
-            <div style="font-size:20px;font-weight:700;color:#64748b;" id="stat-job-not">0</div>
+            <div style="font-size:18px;font-weight:700;color:#64748b;" id="stat-job-not">0</div>
         </div>
         <div class="stat-card" style="padding:10px;background:var(--bg-app);border-radius:var(--radius-sm);text-align:center;">
-            <div style="font-size:11px;color:var(--text-muted);">Failed</div>
-            <div style="font-size:20px;font-weight:700;color:#ef4444;" id="stat-job-failed">0</div>
+            <div style="font-size:11px;color:var(--text-muted);">Failed Stops</div>
+            <div style="font-size:18px;font-weight:700;color:#ef4444;" id="stat-job-failed">0</div>
+        </div>
+        <div class="stat-card" style="padding:10px;background:var(--accent-primary-light);border-radius:var(--radius-sm);text-align:center;border:1px solid rgba(79,70,229,0.2);">
+            <div style="font-size:11px;color:var(--accent-primary);font-weight:600;">Total Media</div>
+            <div style="font-size:18px;font-weight:700;color:var(--accent-primary);" id="stat-job-total-media">0</div>
+        </div>
+        <div class="stat-card" style="padding:10px;background:var(--bg-app);border-radius:var(--radius-sm);text-align:center;">
+            <div style="font-size:11px;color:var(--text-muted);">Processed Media</div>
+            <div style="font-size:18px;font-weight:700;color:#10b981;" id="stat-job-processed-media">0</div>
+        </div>
+        <div class="stat-card" style="padding:10px;background:var(--bg-app);border-radius:var(--radius-sm);text-align:center;">
+            <div style="font-size:11px;color:var(--text-muted);">Remaining Media</div>
+            <div style="font-size:18px;font-weight:700;color:var(--text-muted);" id="stat-job-remaining-media">0</div>
         </div>
     </div>
 
-    <!-- Progress Bar -->
-    <div style="margin-bottom:16px;">
+    <!-- Live Execution Status Bar -->
+    <div style="background:var(--bg-app);border:1px solid var(--border-color);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;font-size:12px;">
+        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+            <span><i class="bi bi-geo-alt-fill text-danger"></i> <strong>Current Stop:</strong> <span id="job-current-stop-name">Ready</span></span>
+            <span><i class="bi bi-camera-video text-primary"></i> <strong>Processing Angle:</strong> <span id="job-current-angle">-</span></span>
+            <span><i class="bi bi-file-earmark-play text-success"></i> <strong>Current Media:</strong> <span id="job-current-filename">-</span></span>
+        </div>
+        <div>
+            <span><i class="bi bi-cpu-fill text-primary"></i> <strong>AI Status:</strong> <span id="job-ai-status" class="badge-status badge-present" style="font-size:11px;padding:2px 8px;">Idle</span></span>
+        </div>
+    </div>
+
+    <!-- Overall Progress Bar -->
+    <div style="margin-bottom:14px;">
         <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;">
-            <span id="job-current-step-label" style="font-weight:600;color:var(--text-main);">Current Stop: Ready to begin</span>
+            <span id="job-current-step-label" style="font-weight:600;color:var(--text-main);">Overall Stop-Wise Progress: Ready</span>
             <span id="job-progress-percentage" style="font-weight:700;color:var(--accent-primary);">0%</span>
         </div>
         <div style="width:100%;height:8px;background:#e2e8f0;border-radius:4px;overflow:hidden;">
             <div id="job-progress-bar" style="width:0%;height:100%;background:var(--accent-primary);transition:width 0.3s;"></div>
+        </div>
+    </div>
+
+    <!-- 3 Independent Angle Progress Indicators -->
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px;">
+        <div style="background:var(--bg-app);border:1px solid var(--border-color);border-radius:var(--radius-sm);padding:8px 12px;">
+            <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px;">
+                <span style="font-weight:600;"><i class="bi bi-camera-fill text-primary"></i> Angle A (Front)</span>
+                <span id="angle-progress-pct-a" style="font-weight:700;color:var(--accent-primary);">0%</span>
+            </div>
+            <div style="width:100%;height:6px;background:#e2e8f0;border-radius:3px;overflow:hidden;">
+                <div id="angle-progress-bar-a" style="width:0%;height:100%;background:#3b82f6;transition:width 0.3s;"></div>
+            </div>
+        </div>
+        <div style="background:var(--bg-app);border:1px solid var(--border-color);border-radius:var(--radius-sm);padding:8px 12px;">
+            <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px;">
+                <span style="font-weight:600;"><i class="bi bi-camera-fill text-success"></i> Angle B (Middle)</span>
+                <span id="angle-progress-pct-b" style="font-weight:700;color:#10b981;">0%</span>
+            </div>
+            <div style="width:100%;height:6px;background:#e2e8f0;border-radius:3px;overflow:hidden;">
+                <div id="angle-progress-bar-b" style="width:0%;height:100%;background:#10b981;transition:width 0.3s;"></div>
+            </div>
+        </div>
+        <div style="background:var(--bg-app);border:1px solid var(--border-color);border-radius:var(--radius-sm);padding:8px 12px;">
+            <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px;">
+                <span style="font-weight:600;"><i class="bi bi-camera-fill text-warning"></i> Angle C (Rear)</span>
+                <span id="angle-progress-pct-c" style="font-weight:700;color:#f59e0b;">0%</span>
+            </div>
+            <div style="width:100%;height:6px;background:#e2e8f0;border-radius:3px;overflow:hidden;">
+                <div id="angle-progress-bar-c" style="width:0%;height:100%;background:#f59e0b;transition:width 0.3s;"></div>
+            </div>
         </div>
     </div>
 
@@ -553,6 +611,9 @@
             </button>
             <button type="button" class="btn-secondary" style="padding:6px 12px;font-size:12px;" onclick="exportStopManifest()">
                 <i class="bi bi-list-check"></i> Manifest
+            </button>
+            <button type="button" class="btn-primary" id="btn-publish-automated-cloud" style="padding:6px 14px;font-size:12px;background:#0284c7;border-color:#0284c7;" onclick="publishAutomatedReportsToLiveServer()">
+                <i class="bi bi-cloud-arrow-up-fill"></i> PUBLISH REPORTS TO LIVE SERVER
             </button>
         </div>
     </div>

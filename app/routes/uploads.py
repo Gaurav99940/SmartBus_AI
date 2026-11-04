@@ -334,27 +334,30 @@ def upload_multi_angle_bus_photos():
     if not journey:
         return jsonify({"error": f"Journey #{journey_id} does not exist."}), 404
 
-    # Check which angle files are present
+    # Check which angle files are present (support single or multiple files per angle)
     angle_files = {}
     for angle_char in ["A", "B", "C"]:
         field_key = f"photo_{angle_char.lower()}" # e.g. photo_a, photo_b, photo_c
         alt_key = f"photo_{angle_char}"
-        file_obj = request.files.get(field_key) or request.files.get(alt_key)
-        if file_obj and file_obj.filename != "":
-            if not allowed_file(file_obj.filename):
-                return jsonify({"error": f"Invalid file type for Angle {angle_char}. Allowed: JPG, PNG, WEBP."}), 400
-            angle_files[angle_char] = file_obj
+        files_key = f"files_{angle_char.lower()}"
+        file_list = request.files.getlist(field_key) + request.files.getlist(alt_key) + request.files.getlist(files_key)
+        # Filter valid non-empty files
+        valid_files = [f for f in file_list if f and getattr(f, "filename", "")]
+        if valid_files:
+            for f in valid_files:
+                if not allowed_file(f.filename):
+                    return jsonify({"error": f"Invalid file type for Angle {angle_char}: {f.filename}. Allowed: JPG, PNG, WEBP, MP4, AVI, MOV, MKV."}), 400
+            angle_files[angle_char] = valid_files
 
     # If only single legacy 'photo' field provided, treat as Angle A
     if len(angle_files) == 0 and "photo" in request.files:
-        p_file = request.files["photo"]
-        if p_file and p_file.filename != "" and allowed_file(p_file.filename):
-            angle_files["A"] = p_file
+        p_files = [f for f in request.files.getlist("photo") if f and getattr(f, "filename", "") and allowed_file(f.filename)]
+        if p_files:
+            angle_files["A"] = p_files
 
     if len(angle_files) == 0:
-        return jsonify({"error": "Please select at least one bus camera-angle photo (Angle A, B, or C) to upload."}), 400
+        return jsonify({"error": "Please select at least one bus camera-angle photo or video clip (Angle A, B, or C) to upload."}), 400
 
-    batch_id = uuid.uuid4().hex[:12]
     user_id = session.get("user_id")
     Config.UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
 
@@ -382,135 +385,179 @@ def upload_multi_angle_bus_photos():
             closest_stop = min(bus_stops, key=lambda s: (s.latitude - master_lat)**2 + (s.longitude - master_lon)**2)
             final_stop_id = closest_stop.id
 
-    angle_uploads = {}
     timestamp_formats = ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M")
+    from app.services.media_service import extract_frame_at_timestamp, extract_media_metadata, extract_frames_from_video
 
-    for angle, f_obj in angle_files.items():
-        clean_name = secure_filename(f_obj.filename) or f"angle_{angle}.jpg"
-        ext = clean_name.rsplit(".", 1)[1].lower() if "." in clean_name else "jpg"
-        unique_fname = f"bus_{journey.id}_batch_{batch_id}_angle_{angle}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:4]}.{ext}"
-        saved_path = Config.UPLOAD_FOLDER / unique_fname
-        f_obj.save(str(saved_path))
-        f_size = os.path.getsize(saved_path)
+    # Build sequence of items per angle to process in sequential queue
+    angle_queue_items = {} # angle -> list of item dicts
+    total_source_files = 0
 
-        # File hash & EXIF/video metadata
-        f_hash = compute_file_hash(str(saved_path))
-        is_video = ext in ("mp4", "avi", "mov", "mkv", "wmv", "webm", "m4v")
-        effective_analysis_path = str(saved_path)
-
-        if is_video:
-            from app.services.media_service import extract_frame_at_timestamp, extract_media_metadata
-            v_meta = extract_media_metadata(str(saved_path))
-            v_start = v_meta.get("start_time") or datetime.utcnow()
-            meta = {
-                "capture_timestamp": v_start,
-                "latitude": None,
-                "longitude": None,
-                "gps_accuracy": None
-            }
-            # Extract first/middle frame for AI analysis
-            extracted, f_err = extract_frame_at_timestamp(str(saved_path), v_start, v_start)
-            if extracted and extracted.get("frame_path"):
-                effective_analysis_path = extracted["frame_path"]
-        else:
-            meta = extract_metadata(str(saved_path))
-
-        # Check duplicate
-        existing_dup = Upload.query.filter_by(journey_id=journey.id, file_hash=f_hash).first()
-        dup_note = None
-        if existing_dup:
-            dup_note = f"Notice: Identical photo was already uploaded for this journey (Upload #{existing_dup.id})."
-
-        # Resolve angle capture timestamp
+    for angle, f_list in angle_files.items():
+        angle_queue_items[angle] = []
         angle_time_str = request.form.get(f"capture_timestamp_{angle.lower()}") or request.form.get("capture_timestamp")
-        final_capture_time = None
+        parsed_override_time = None
         if angle_time_str:
             for fmt in timestamp_formats:
                 try:
-                    final_capture_time = datetime.strptime(angle_time_str.strip(), fmt)
+                    parsed_override_time = datetime.strptime(angle_time_str.strip(), fmt)
                     break
                 except ValueError:
                     pass
 
-        if not final_capture_time:
-            final_capture_time = meta["capture_timestamp"] or datetime.utcnow()
+        for f_obj in f_list:
+            total_source_files += 1
+            clean_name = secure_filename(f_obj.filename) or f"angle_{angle}.jpg"
+            ext = clean_name.rsplit(".", 1)[1].lower() if "." in clean_name else "jpg"
+            unique_fname = f"bus_{journey.id}_angle_{angle}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:4]}.{ext}"
+            saved_path = Config.UPLOAD_FOLDER / unique_fname
+            f_obj.save(str(saved_path))
+            f_size = os.path.getsize(saved_path)
+            f_hash = compute_file_hash(str(saved_path))
 
-        # Resolve GPS
-        angle_lat = master_lat
-        angle_lon = master_lon
-        final_loc_src = loc_source
+            is_video = ext in ("mp4", "avi", "mov", "mkv", "wmv", "webm", "m4v")
 
-        if angle_lat is None and meta["latitude"] is not None:
-            angle_lat = meta["latitude"]
-            angle_lon = meta["longitude"]
-            final_loc_src = "EXIF"
+            if is_video:
+                v_meta = extract_media_metadata(str(saved_path))
+                v_start = parsed_override_time or v_meta.get("start_time") or datetime.utcnow()
+                # Extract frames at configurable interval (e.g. 3.0s) avoiding redundant frames
+                frames = extract_frames_from_video(str(saved_path), start_timestamp=v_start, interval_seconds=3.0, max_frames=20)
+                if not frames:
+                    # Fallback single frame extraction
+                    extracted, f_err = extract_frame_at_timestamp(str(saved_path), v_start, v_start)
+                    if extracted and extracted.get("frame_path"):
+                        frames = [{
+                            "frame_path": extracted["frame_path"],
+                            "frame_filename": extracted.get("frame_filename", clean_name),
+                            "frame_number": extracted.get("frame_number", 0),
+                            "frame_timestamp": v_start
+                        }]
 
-        # Create Upload DB record
-        upload_rec = Upload(
-            journey_id=journey.id,
-            bus_id=journey.bus_id,
-            camera_angle=angle,
-            batch_id=batch_id,
-            file_path=effective_analysis_path,
-            original_filename=clean_name,
-            file_size=f_size,
-            file_hash=f_hash,
-            capture_timestamp=final_capture_time,
-            upload_timestamp=datetime.utcnow(),
-            latitude=angle_lat,
-            longitude=angle_lon,
-            gps_accuracy=meta.get("gps_accuracy"),
-            location_source=final_loc_src,
-            route_stop_id=final_stop_id,
-            status="processing"
-        )
-        if dup_note:
-            upload_rec.processing_notes = dup_note
-        db.session.add(upload_rec)
-        db.session.flush()
+                for fr in frames:
+                    angle_queue_items[angle].append({
+                        "file_path": fr["frame_path"],
+                        "original_filename": f"{clean_name} [f#{fr.get('frame_number', 0)}]",
+                        "file_size": f_size,
+                        "file_hash": f_hash,
+                        "capture_timestamp": fr.get("frame_timestamp", v_start),
+                        "latitude": master_lat,
+                        "longitude": master_lon,
+                        "location_source": loc_source
+                    })
+            else:
+                meta = extract_metadata(str(saved_path))
+                cap_dt = parsed_override_time or meta.get("capture_timestamp") or datetime.utcnow()
+                final_lat = master_lat if master_lat is not None else meta.get("latitude")
+                final_lon = master_lon if master_lon is not None else meta.get("longitude")
+                final_src = loc_source if master_lat is not None else ("EXIF" if meta.get("latitude") else "NONE")
 
-        # GPS Location
-        if angle_lat is not None and angle_lon is not None:
-            gps_rec = GPSLocation(
-                upload_id=upload_rec.id,
-                journey_id=journey.id,
-                latitude=angle_lat,
-                longitude=angle_lon,
-                accuracy=meta.get("gps_accuracy"),
-                location_source=final_loc_src,
-                recorded_at=final_capture_time
-            )
-            db.session.add(gps_rec)
+                angle_queue_items[angle].append({
+                    "file_path": str(saved_path),
+                    "original_filename": clean_name,
+                    "file_size": f_size,
+                    "file_hash": f_hash,
+                    "capture_timestamp": cap_dt,
+                    "latitude": final_lat,
+                    "longitude": final_lon,
+                    "location_source": final_src,
+                    "gps_accuracy": meta.get("gps_accuracy")
+                })
 
-        angle_uploads[angle] = upload_rec
+    # Sequential queue processing across Angle A, B, C
+    max_steps = max(len(angle_queue_items.get("A", [])), len(angle_queue_items.get("B", [])), len(angle_queue_items.get("C", [])))
+    if max_steps == 0:
+        return jsonify({"error": "No valid frames or images could be processed."}), 400
 
-    db.session.commit()
+    latest_result = None
+    processed_steps = 0
+    all_uploads_created = []
 
-    # Run multi-angle AI pipeline with resilient error handling
-    try:
-        result = process_multi_angle_batch(
-            journey_id=journey.id,
-            batch_id=batch_id,
-            angle_uploads=angle_uploads,
-            user_id=user_id,
-            stop_id=final_stop_id
-        )
-        return jsonify(result), 201
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        db.session.rollback()
-        for u in angle_uploads.values():
+    for step_i in range(max_steps):
+        batch_id = f"batch_{uuid.uuid4().hex[:10]}"
+        step_angle_uploads = {}
+
+        for angle in ["A", "B", "C"]:
+            q = angle_queue_items.get(angle, [])
+            if step_i < len(q):
+                item = q[step_i]
+                existing_duplicate = Upload.query.filter_by(journey_id=journey.id, file_hash=item["file_hash"]).first()
+                duplicate_warning = None
+                if existing_duplicate:
+                    duplicate_warning = f"Notice: Identical photo was already uploaded for this journey (Upload #{existing_duplicate.id} at {existing_duplicate.upload_timestamp.strftime('%H:%M:%S')})."
+
+                upload_rec = Upload(
+                    journey_id=journey.id,
+                    bus_id=journey.bus_id,
+                    camera_angle=angle,
+                    batch_id=batch_id,
+                    file_path=item["file_path"],
+                    original_filename=item["original_filename"],
+                    file_size=item["file_size"],
+                    file_hash=item["file_hash"],
+                    capture_timestamp=item["capture_timestamp"],
+                    upload_timestamp=datetime.utcnow(),
+                    latitude=item["latitude"],
+                    longitude=item["longitude"],
+                    gps_accuracy=item.get("gps_accuracy"),
+                    location_source=item["location_source"],
+                    route_stop_id=final_stop_id,
+                    processing_notes=duplicate_warning,
+                    status="processing"
+                )
+                db.session.add(upload_rec)
+                db.session.flush()
+
+                if item["latitude"] is not None and item["longitude"] is not None:
+                    gps_rec = GPSLocation(
+                        upload_id=upload_rec.id,
+                        journey_id=journey.id,
+                        latitude=item["latitude"],
+                        longitude=item["longitude"],
+                        accuracy=item.get("gps_accuracy"),
+                        location_source=item["location_source"],
+                        recorded_at=item["capture_timestamp"]
+                    )
+                    db.session.add(gps_rec)
+
+                step_angle_uploads[angle] = upload_rec
+                all_uploads_created.append(upload_rec)
+
+        db.session.commit()
+
+        if step_angle_uploads:
             try:
-                u.status = "failed"
-                u.processing_notes = f"Multi-angle AI processing error: {str(e)}"
-            except Exception:
-                pass
-        try:
-            db.session.commit()
-        except Exception:
-            pass
-        return jsonify({"success": False, "error": f"AI Pipeline error: {str(e)}"}), 500
+                res = process_multi_angle_batch(
+                    journey_id=journey.id,
+                    batch_id=batch_id,
+                    angle_uploads=step_angle_uploads,
+                    user_id=user_id,
+                    stop_id=final_stop_id
+                )
+                latest_result = res
+                processed_steps += 1
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                db.session.rollback()
+                for u in step_angle_uploads.values():
+                    try:
+                        u.status = "failed"
+                        u.processing_notes = f"AI processing error: {str(e)}"
+                    except Exception:
+                        pass
+                try:
+                    db.session.commit()
+                except Exception:
+                    pass
+                if not latest_result:
+                    return jsonify({"success": False, "error": f"AI Pipeline error: {str(e)}"}), 500
+
+    if latest_result:
+        latest_result["total_files_received"] = total_source_files
+        latest_result["total_queue_steps_processed"] = processed_steps
+        latest_result["total_uploads_analyzed"] = len(all_uploads_created)
+        return jsonify(latest_result), 201
+
+    return jsonify({"success": False, "error": "Failed to process media queues."}), 500
 
 
 @uploads_bp.route("/observations/<int:obs_id>/review", methods=["POST"])

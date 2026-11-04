@@ -28,6 +28,7 @@ def create_app(config_class=Config):
     from app.routes.settings import settings_bp
     from app.routes.route_stops import route_stops_bp
     from app.routes.automated import automated_bp
+    from app.routes.cloud_sync import cloud_sync_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(buses_bp)
@@ -40,6 +41,7 @@ def create_app(config_class=Config):
     app.register_blueprint(settings_bp)
     app.register_blueprint(route_stops_bp)
     app.register_blueprint(automated_bp)
+    app.register_blueprint(cloud_sync_bp)
 
     # Data file serving (uploads, face crops)
     @app.route("/data/<path:filename>")
