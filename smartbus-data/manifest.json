@@ -1,4 +1,22 @@
 {
-  "last_synced_at": "2026-11-04 18:21:01 UTC",
-  "published_journeys": []
+  "last_synced_at": "2026-11-05 06:38:38 UTC",
+  "published_journeys": [
+    {
+      "journey_id": 1,
+      "journey_code": "JNY-AUTO-TEST",
+      "folder": "journey_001",
+      "bus_number": "BUS-001",
+      "route": "Origin A -> Dest B",
+      "total_passengers": 0,
+      "total_stops": 28,
+      "exported_at": "2026-11-05 06:38:38 UTC",
+      "remote_images_uploaded": 0,
+      "reports": {
+        "passenger_report_pdf": "journeys/journey_001/reports/passenger_report.pdf",
+        "summary_report_pdf": "journeys/journey_001/reports/summary_report.pdf",
+        "attendance_csv": "journeys/journey_001/reports/attendance.csv",
+        "attendance_xlsx": "journeys/journey_001/reports/attendance.xlsx"
+      }
+    }
+  ]
 }

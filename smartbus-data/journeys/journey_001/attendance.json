@@ -1,0 +1,16 @@
+{
+  "journey_id": 1,
+  "journey_code": "JNY-AUTO-TEST",
+  "bus_number": "BUS-001",
+  "route_name": "Koshambi Bus Stand \u2192 Bus Depot",
+  "origin": "Origin A",
+  "destination": "Dest B",
+  "start_time": "2026-11-05 06:30:40",
+  "end_time": null,
+  "total_passengers_observed": 0,
+  "present_passengers": 0,
+  "exited_passengers": 0,
+  "bus_capacity": 55,
+  "occupancy_rate_percentage": 0.0,
+  "generated_at": "2026-11-05 06:38:36 UTC"
+}

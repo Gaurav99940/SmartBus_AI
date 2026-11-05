@@ -1,0 +1,3 @@
+# SMART BUS PASSENGER TRACKING & ATTENDANCE SYSTEM - REPORT,"# NOTE: First-seen and last-seen timestamps are observation-based camera estimates, not guaranteed true boarding/exit times.",# Biometric face vectors are protected and excluded from exports.
+
+Person ID,Journey Code,Bus Number,Origin - Destination,Presence Status,Assigned Seat,Stops Traveled,Boarding Stop / Location,First Seen Time (In),Exit Stop / Location,Last Seen Time (Out),Total Observations,Missed Photos Count,First Seen Latitude,First Seen Longitude,Last Confirmed Latitude,Last Confirmed Longitude,Exit Confirmed By Operator,Confirmed At,Operator Notes

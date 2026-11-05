@@ -1,0 +1,254 @@
+[
+  {
+    "stop_id": 113,
+    "stop_number": 1,
+    "stop_name": "Kaiserbagh Bus Station, Qaiserbagh, Lucknow, Uttar Pradesh 226001, India",
+    "scheduled_arrival": "18:00:16",
+    "scheduled_departure": "18:30:16",
+    "coverage_status": "NOT_COVERED",
+    "matches": []
+  },
+  {
+    "stop_id": 114,
+    "stop_number": 2,
+    "stop_name": "Kaiserbagh Bus Station, Qaiserbagh, Lucknow, Uttar Pradesh 226001, India",
+    "scheduled_arrival": "18:30:16",
+    "scheduled_departure": "19:00:16",
+    "coverage_status": "NOT_COVERED",
+    "matches": []
+  },
+  {
+    "stop_id": 115,
+    "stop_number": 3,
+    "stop_name": "Kaiserbagh Bus Station, Qaiserbagh, Lucknow, Uttar Pradesh 226001, India",
+    "scheduled_arrival": "19:00:16",
+    "scheduled_departure": "19:30:16",
+    "coverage_status": "NOT_COVERED",
+    "matches": []
+  },
+  {
+    "stop_id": 116,
+    "stop_number": 4,
+    "stop_name": "Kaiserbagh Bus Station, Qaiserbagh, Lucknow, Uttar Pradesh 226001, India",
+    "scheduled_arrival": "19:30:16",
+    "scheduled_departure": "20:00:16",
+    "coverage_status": "NOT_COVERED",
+    "matches": []
+  },
+  {
+    "stop_id": 117,
+    "stop_number": 5,
+    "stop_name": "VWJJ+48X, Sitapur Road, Sector CS, Madehgunj, Lucknow, Lucknow, Lucknow Division, Uttar Pradesh, India, 226020",
+    "scheduled_arrival": "20:00:16",
+    "scheduled_departure": "20:30:16",
+    "coverage_status": "NOT_COVERED",
+    "matches": []
+  },
+  {
+    "stop_id": 118,
+    "stop_number": 6,
+    "stop_name": "2WF6+3RM, Rampur Bahera, Lucknow, Lucknow Division, Uttar Pradesh, India, 226202",
+    "scheduled_arrival": "20:30:16",
+    "scheduled_departure": "21:00:16",
+    "coverage_status": "NOT_COVERED",
+    "matches": []
+  },
+  {
+    "stop_id": 119,
+    "stop_number": 7,
+    "stop_name": "Sidhauli, Uttar Pradesh 261303, India",
+    "scheduled_arrival": "21:00:16",
+    "scheduled_departure": "21:30:16",
+    "coverage_status": "NOT_COVERED",
+    "matches": []
+  },
+  {
+    "stop_id": 120,
+    "stop_number": 8,
+    "stop_name": "Lucknow - Shahjahanpur Road, Uttar Pradesh 261001, India",
+    "scheduled_arrival": "21:30:16",
+    "scheduled_departure": "22:00:16",
+    "coverage_status": "NOT_COVERED",
+    "matches": []
+  },
+  {
+    "stop_id": 121,
+    "stop_number": 9,
+    "stop_name": "Advenia Grant, Uttar Pradesh 261001, India",
+    "scheduled_arrival": "22:00:16",
+    "scheduled_departure": "22:30:16",
+    "coverage_status": "NOT_COVERED",
+    "matches": []
+  },
+  {
+    "stop_id": 122,
+    "stop_number": 10,
+    "stop_name": "Khakhra, Uttar Pradesh, India",
+    "scheduled_arrival": "22:30:16",
+    "scheduled_departure": "23:00:16",
+    "coverage_status": "NOT_COVERED",
+    "matches": []
+  },
+  {
+    "stop_id": 123,
+    "stop_number": 11,
+    "stop_name": "Dundaulia, Uttar Pradesh 261505, India",
+    "scheduled_arrival": "23:00:16",
+    "scheduled_departure": "23:30:16",
+    "coverage_status": "NOT_COVERED",
+    "matches": []
+  },
+  {
+    "stop_id": 124,
+    "stop_number": 12,
+    "stop_name": "VX47+25R, Jamuhi, Shahjahanpur, Bareilly Division, Uttar Pradesh, India, 242306",
+    "scheduled_arrival": "23:30:16",
+    "scheduled_departure": "00:00:16",
+    "coverage_status": "NOT_COVERED",
+    "matches": []
+  },
+  {
+    "stop_id": 125,
+    "stop_number": 13,
+    "stop_name": "NH30, Rausar, Uttar Pradesh 242226, India",
+    "scheduled_arrival": "00:00:16",
+    "scheduled_departure": "00:30:16",
+    "coverage_status": "NOT_COVERED",
+    "matches": []
+  },
+  {
+    "stop_id": 126,
+    "stop_number": 14,
+    "stop_name": "Tilhar, Uttar Pradesh 242307, India",
+    "scheduled_arrival": "00:30:16",
+    "scheduled_departure": "01:00:16",
+    "coverage_status": "NOT_COVERED",
+    "matches": []
+  },
+  {
+    "stop_id": 127,
+    "stop_number": 15,
+    "stop_name": "Pachauni, Uttar Pradesh 243503, India",
+    "scheduled_arrival": "01:00:16",
+    "scheduled_departure": "01:30:16",
+    "coverage_status": "NOT_COVERED",
+    "matches": []
+  },
+  {
+    "stop_id": 128,
+    "stop_number": 16,
+    "stop_name": "9C2Q+7M3, Civil Lines, Bareilly, Bareilly, Uttar Pradesh, India, 243006",
+    "scheduled_arrival": "01:30:16",
+    "scheduled_departure": "02:00:16",
+    "coverage_status": "NOT_COVERED",
+    "matches": []
+  },
+  {
+    "stop_id": 129,
+    "stop_number": 17,
+    "stop_name": "112, Kishore Bazar, Civil Lines, Bareilly, Bareilly, Bareilly Division, Uttar Pradesh, India, 243001",
+    "scheduled_arrival": "02:00:16",
+    "scheduled_departure": "02:30:16",
+    "coverage_status": "NOT_COVERED",
+    "matches": []
+  },
+  {
+    "stop_id": 130,
+    "stop_number": 18,
+    "stop_name": "NH530, Uttar Pradesh 243505, India",
+    "scheduled_arrival": "02:30:16",
+    "scheduled_departure": "03:00:16",
+    "coverage_status": "NOT_COVERED",
+    "matches": []
+  },
+  {
+    "stop_id": 131,
+    "stop_number": 19,
+    "stop_name": "Faizullah Nagar, Uttar Pradesh 244901, India",
+    "scheduled_arrival": "03:00:16",
+    "scheduled_departure": "03:30:16",
+    "coverage_status": "NOT_COVERED",
+    "matches": []
+  },
+  {
+    "stop_id": 132,
+    "stop_number": 20,
+    "stop_name": "Chamraua, Uttar Pradesh 244104, India",
+    "scheduled_arrival": "03:30:16",
+    "scheduled_departure": "04:00:16",
+    "coverage_status": "NOT_COVERED",
+    "matches": []
+  },
+  {
+    "stop_id": 133,
+    "stop_number": 21,
+    "stop_name": "Majhola, Moradabad, Moradabad, Uttar Pradesh, India",
+    "scheduled_arrival": "04:00:16",
+    "scheduled_departure": "04:30:16",
+    "coverage_status": "NOT_COVERED",
+    "matches": []
+  },
+  {
+    "stop_id": 134,
+    "stop_number": 22,
+    "stop_name": "Doolapur Sant Prasad, Uttar Pradesh 244222, India",
+    "scheduled_arrival": "04:30:16",
+    "scheduled_departure": "05:00:16",
+    "coverage_status": "NOT_COVERED",
+    "matches": []
+  },
+  {
+    "stop_id": 135,
+    "stop_number": 23,
+    "stop_name": "Khugauali, Uttar Pradesh 244235, India",
+    "scheduled_arrival": "05:00:16",
+    "scheduled_departure": "05:30:16",
+    "coverage_status": "NOT_COVERED",
+    "matches": []
+  },
+  {
+    "stop_id": 136,
+    "stop_number": 24,
+    "stop_name": "Hapur, Uttar Pradesh, India",
+    "scheduled_arrival": "05:30:16",
+    "scheduled_departure": "06:00:16",
+    "coverage_status": "NOT_COVERED",
+    "matches": []
+  },
+  {
+    "stop_id": 137,
+    "stop_number": 25,
+    "stop_name": "Faridpur Simbhavali, Uttar Pradesh 245207, India",
+    "scheduled_arrival": "06:00:16",
+    "scheduled_departure": "06:30:16",
+    "coverage_status": "NOT_COVERED",
+    "matches": []
+  },
+  {
+    "stop_id": 138,
+    "stop_number": 26,
+    "stop_name": "\u0915\u094d\u0937\u0947\u0924\u094d\u0930 \u0938\u093e\u0920\u093e \u091a\u094c\u0930\u093e\u0938\u0940 \u0926\u093e\u0926\u093e \u0906\u0928\u0902\u0917\u092a\u093e\u0932 \u0938\u093f\u0902\u0939 \u0924\u094b\u092e\u0930 \u0917\u093e\u0902\u0935 \u092c\u0921\u093c\u094c\u0926\u093e \u0939\u093f\u0902\u0926\u0942\u0935\u093e\u0928 \u092e\u093e\u0930\u094d\u0917, PM8Q+38W, Hapur, Meerut Division, Uttar Pradesh, India, 245304",
+    "scheduled_arrival": "06:30:16",
+    "scheduled_departure": "07:00:16",
+    "coverage_status": "NOT_COVERED",
+    "matches": []
+  },
+  {
+    "stop_id": 139,
+    "stop_number": 27,
+    "stop_name": "J9PW+9FM, 25th Feet Rd, Budh Vihar, Bahrampur, Nai Basti Dundahera, Noida, Uttar Pradesh 201301, India",
+    "scheduled_arrival": "07:00:16",
+    "scheduled_departure": "07:30:16",
+    "coverage_status": "NOT_COVERED",
+    "matches": []
+  },
+  {
+    "stop_id": 140,
+    "stop_number": 28,
+    "stop_name": "Ghaziabad, Plot Alpha, Sahibabad Industrial Area Site 4, Sahibabad, Shahdara, Uttar Pradesh, India, 201012",
+    "scheduled_arrival": "07:30:16",
+    "scheduled_departure": "08:00:16",
+    "coverage_status": "NOT_COVERED",
+    "matches": []
+  }
+]
